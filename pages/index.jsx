@@ -492,7 +492,7 @@ function Leads({leads,setLeads}) {
         <Input value={form.name} onChange={v=>setForm(p=>({...p,name:v}))} placeholder="Nome lead" style={{marginBottom:8}}/>
         <Sel value={form.source} onChange={v=>setForm(p=>({...p,source:v}))} options={SOURCES} style={{marginBottom:8}}/>
         <Input value={form.notes} onChange={v=>setForm(p=>({...p,notes:v}))} placeholder="Note" multiline rows={2} style={{marginBottom:12}}/>
-        <Btn full onClick={()=>{if(form.name.trim()){setLeads(p=>[{id:Date.now(),...form},..p]);setForm(f=>({...f,name:'',notes:''}));}}}>Aggiungi</Btn>
+        <Btn full onClick={()=>{if(form.name.trim()){setLeads(p=>[{id:Date.now(),...form},...p]);setForm(f=>({...f,name:'',notes:''}));}}}>Aggiungi</Btn>
       </Card>
       <Card style={{background:`linear-gradient(135deg,${today>=1?C.greenD:C.redD},${C.card})`,border:`1px solid ${today>=1?C.green+'44':C.red+'44'}`}}>
         <div style={{textAlign:'center',padding:'20px 0'}}>
