@@ -4,15 +4,15 @@
 import { useState, useEffect } from 'react';
 
 const C = {
-  bg:'#080b12',bgAlt:'#0f1420',card:'#131926',cardH:'#161d2e',surface:'#1a2234',
-  border:'#1e2a3a',text:'#e8eaf2',textD:'#8a93a8',muted:'#4a5568',
-  gold:'#b8973a',goldL:'#d4af5a',goldD:'#8a6f2a',
-  green:'#4caf7d',greenD:'#0d2a1a',red:'#f66',redD:'#2a0808',
-  blue:'#4a90d9',blueD:'#0a1828',blueL:'#6aadff',
-  amber:'#f59e0b',
-  linkedin:'#0A66C2',linkedinD:'rgba(10,102,194,.18)',
-  meta:'#1877F2',metaD:'rgba(24,119,242,.15)',
-  instagram:'#E1306C',instagramD:'rgba(225,48,108,.12)',
+  bg:'#05080f',bgAlt:'#0b1018',card:'#0f1621',cardH:'#141d2e',surface:'#161f30',
+  border:'#2a3a55',text:'#f0f2ff',textD:'#a8b4cc',muted:'#5a6a88',
+  gold:'#f0c040',goldL:'#ffd966',goldD:'#b8900a',
+  green:'#2edc8a',greenD:'#0a2a1a',red:'#ff5555',redD:'#2a0808',
+  blue:'#5aa8ff',blueD:'#0a1828',blueL:'#82c4ff',
+  amber:'#ffb830',
+  linkedin:'#3d9bff',linkedinD:'rgba(61,155,255,.22)',
+  meta:'#4a9fff',metaD:'rgba(74,159,255,.18)',
+  instagram:'#ff4d8d',instagramD:'rgba(255,77,141,.15)',
   purple:'#9b59b6',purpleD:'rgba(155,89,182,.15)',
 };
 
