@@ -3,7 +3,7 @@ export default async function handler(req, res) {
   if (!apiKey) return res.status(200).json({ status: 'ERRORE', message: 'GEMINI_API_KEY mancante' });
   try {
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -14,7 +14,7 @@ export default async function handler(req, res) {
     if (response.ok) {
       return res.status(200).json({ status: 'OK ✅', risposta: data.candidates?.[0]?.content?.parts?.[0]?.text || '' });
     } else {
-      return res.status(200).json({ status: 'ERRORE', dettaglio: data.error?.message });
+      return res.status(200).json({ status: 'ERRORE', codice: response.status, dettaglio: data.error?.message });
     }
   } catch (err) {
     return res.status(200).json({ status: 'ERRORE RETE', dettaglio: err.message });
