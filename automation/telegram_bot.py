@@ -44,23 +44,25 @@ def send_message(bot_token: str, chat_id: str, text: str) -> None:
 
 def initialize_linkedin_upload(access_token: str, person_id: str) -> tuple[str, str]:
     """Inizializza l'upload documento su LinkedIn. Restituisce (upload_url, asset_urn)."""
-    resp = requests.post(
-        "https://api.linkedin.com/rest/documents",
-        headers={
-            "Authorization": f"Bearer {access_token}",
-            "Content-Type": "application/json",
-            "LinkedIn-Version": "202304",
-            "X-Restli-Protocol-Version": "2.0.0",
-        },
-        json={"initializeUploadRequest": {"owner": f"urn:li:person:{person_id}"}},
-        timeout=15,
-    )
-    if not resp.ok:
-        raise RuntimeError(f"LinkedIn init upload error {resp.status_code}: {resp.text}")
-    data = resp.json()
-    upload_url = data["value"]["uploadUrl"]
-    asset_urn = data["value"]["document"]
-    return upload_url, asset_urn
+    for version in ["202501", "202411", "202304"]:
+        resp = requests.post(
+            "https://api.linkedin.com/rest/documents",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json",
+                "LinkedIn-Version": version,
+                "X-Restli-Protocol-Version": "2.0.0",
+            },
+            json={"initializeUploadRequest": {"owner": f"urn:li:person:{person_id}"}},
+            timeout=15,
+        )
+        if resp.ok:
+            data = resp.json()
+            return data["value"]["uploadUrl"], data["value"]["document"]
+        if resp.status_code != 404:
+            raise RuntimeError(f"LinkedIn init upload error {resp.status_code}: {resp.text}")
+        print(f"[telegram_bot] Version {version} → 404, provo versione successiva...")
+    raise RuntimeError(f"LinkedIn init upload error 404: {resp.text}")
 
 
 def upload_pdf(upload_url: str, pdf_path: str, access_token: str) -> None:
@@ -88,7 +90,7 @@ def publish_carousel(caption: str, asset_urn: str,
         headers={
             "Authorization": f"Bearer {access_token}",
             "Content-Type": "application/json",
-            "LinkedIn-Version": "202304",
+            "LinkedIn-Version": "202501",
             "X-Restli-Protocol-Version": "2.0.0",
         },
         json={
@@ -116,6 +118,35 @@ def publish_carousel(caption: str, asset_urn: str,
     return resp.headers.get("x-restli-id", "unknown")
 
 
+def publish_text_post(caption: str, access_token: str, person_id: str) -> str:
+    """Fallback: pubblica un post testuale su LinkedIn (senza carosello)."""
+    resp = requests.post(
+        "https://api.linkedin.com/rest/posts",
+        headers={
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json",
+            "LinkedIn-Version": "202501",
+            "X-Restli-Protocol-Version": "2.0.0",
+        },
+        json={
+            "author": f"urn:li:person:{person_id}",
+            "commentary": caption,
+            "visibility": "PUBLIC",
+            "distribution": {
+                "feedDistribution": "MAIN_FEED",
+                "targetEntities": [],
+                "thirdPartyDistributionChannels": [],
+            },
+            "lifecycleState": "PUBLISHED",
+            "isReshareDisabledByAuthor": False,
+        },
+        timeout=20,
+    )
+    if not resp.ok:
+        raise RuntimeError(f"LinkedIn text post error {resp.status_code}: {resp.text}")
+    return resp.headers.get("x-restli-id", "unknown")
+
+
 def publish_to_linkedin(pending: dict) -> bool:
     access_token = os.environ.get("LINKEDIN_ACCESS_TOKEN", "")
     person_id = os.environ.get("LINKEDIN_PERSON_ID", "")
@@ -127,32 +158,38 @@ def publish_to_linkedin(pending: dict) -> bool:
     content = pending["content"]
 
     try:
-        # 1. Genera il PDF carosello
         content["topic"] = pending.get("topic", "Finanza personale")
-        print("[telegram_bot] Generazione carosello PDF...")
-        pdf_path = build_carousel(content)
-        print(f"[telegram_bot] PDF creato: {pdf_path}")
 
-        # 2. Inizializza upload LinkedIn
-        print("[telegram_bot] Inizializzazione upload LinkedIn...")
-        upload_url, asset_urn = initialize_linkedin_upload(access_token, person_id)
+        # Prova carosello PDF, fallback a post testuale
+        try:
+            print("[telegram_bot] Generazione carosello PDF...")
+            pdf_path = build_carousel(content)
+            print(f"[telegram_bot] PDF creato: {pdf_path}")
 
-        # 3. Carica il PDF
-        print("[telegram_bot] Upload PDF...")
-        upload_pdf(upload_url, pdf_path, access_token)
+            print("[telegram_bot] Inizializzazione upload LinkedIn...")
+            upload_url, asset_urn = initialize_linkedin_upload(access_token, person_id)
 
-        # 4. Pubblica il post
-        print("[telegram_bot] Pubblicazione post...")
-        post_id = publish_carousel(
-            caption=content["caption"],
-            asset_urn=asset_urn,
-            access_token=access_token,
-            person_id=person_id,
-        )
-        print(f"[telegram_bot] Post pubblicato! ID: {post_id}")
+            print("[telegram_bot] Upload PDF...")
+            upload_pdf(upload_url, pdf_path, access_token)
 
-        # Pulizia PDF
-        Path(pdf_path).unlink(missing_ok=True)
+            print("[telegram_bot] Pubblicazione carosello...")
+            post_id = publish_carousel(
+                caption=content["caption"],
+                asset_urn=asset_urn,
+                access_token=access_token,
+                person_id=person_id,
+            )
+            Path(pdf_path).unlink(missing_ok=True)
+            print(f"[telegram_bot] Carosello pubblicato! ID: {post_id}")
+        except RuntimeError as carousel_err:
+            print(f"[telegram_bot] Carosello fallito ({carousel_err}), fallback testo...")
+            post_id = publish_text_post(
+                caption=content["caption"],
+                access_token=access_token,
+                person_id=person_id,
+            )
+            print(f"[telegram_bot] Post testuale pubblicato! ID: {post_id}")
+
         return True
 
     except Exception as e:
