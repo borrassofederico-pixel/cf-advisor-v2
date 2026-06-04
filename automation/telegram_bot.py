@@ -1,6 +1,6 @@
 """
 Polling Telegram: riceve approvazione e pubblica il carosello su LinkedIn
-come documento PDF (ogni pagina = una slide del carosello).
+come post multi-immagine (ogni slide = una foto).
 """
 
 import os
@@ -11,9 +11,15 @@ import requests
 import subprocess
 from pathlib import Path
 
-from generate_carousel import build_carousel
+from generate_carousel import save_slide_jpegs
 
 POLL_TIMEOUT = int(os.environ.get("TELEGRAM_POLL_MINUTES", "30")) * 60
+LI_VERSION = "202501"
+LI_HEADERS_BASE = {
+    "Content-Type": "application/json",
+    "LinkedIn-Version": LI_VERSION,
+    "X-Restli-Protocol-Version": "2.0.0",
+}
 
 
 def get_updates(bot_token: str, offset: int = 0) -> list:
@@ -42,57 +48,59 @@ def send_message(bot_token: str, chat_id: str, text: str) -> None:
     )
 
 
-def initialize_linkedin_upload(access_token: str, person_id: str) -> tuple[str, str]:
-    """Inizializza l'upload documento su LinkedIn. Restituisce (upload_url, asset_urn)."""
-    for version in ["202501", "202411", "202304"]:
-        resp = requests.post(
-            "https://api.linkedin.com/rest/documents",
-            headers={
-                "Authorization": f"Bearer {access_token}",
-                "Content-Type": "application/json",
-                "LinkedIn-Version": version,
-                "X-Restli-Protocol-Version": "2.0.0",
-            },
-            json={"initializeUploadRequest": {"owner": f"urn:li:person:{person_id}"}},
-            timeout=15,
-        )
-        if resp.ok:
-            data = resp.json()
-            return data["value"]["uploadUrl"], data["value"]["document"]
-        if resp.status_code != 404:
-            raise RuntimeError(f"LinkedIn init upload error {resp.status_code}: {resp.text}")
-        print(f"[telegram_bot] Version {version} → 404, provo versione successiva...")
-    raise RuntimeError(f"LinkedIn init upload error 404: {resp.text}")
+def upload_image_to_linkedin(image_path: str, access_token: str, person_id: str) -> str:
+    """Carica una singola immagine su LinkedIn e restituisce l'URN."""
+    headers = {**LI_HEADERS_BASE, "Authorization": f"Bearer {access_token}"}
 
+    # 1. Inizializza upload
+    resp = requests.post(
+        "https://api.linkedin.com/rest/images?action=initializeUpload",
+        headers=headers,
+        json={"initializeUploadRequest": {"owner": f"urn:li:person:{person_id}"}},
+        timeout=15,
+    )
+    if not resp.ok:
+        raise RuntimeError(f"LinkedIn image init error {resp.status_code}: {resp.text}")
+    data = resp.json()
+    upload_url = data["value"]["uploadUrl"]
+    image_urn = data["value"]["image"]
 
-def upload_pdf(upload_url: str, pdf_path: str, access_token: str) -> None:
-    """Carica il PDF sull'URL di upload fornito da LinkedIn."""
-    with open(pdf_path, "rb") as f:
-        pdf_bytes = f.read()
+    # 2. Carica i byte dell'immagine
+    with open(image_path, "rb") as f:
+        img_bytes = f.read()
     resp = requests.put(
         upload_url,
-        headers={
-            "Authorization": f"Bearer {access_token}",
-            "Content-Type": "application/octet-stream",
-        },
-        data=pdf_bytes,
+        headers={"Authorization": f"Bearer {access_token}"},
+        data=img_bytes,
         timeout=60,
     )
     if not resp.ok:
-        raise RuntimeError(f"LinkedIn upload error {resp.status_code}: {resp.text}")
+        raise RuntimeError(f"LinkedIn image upload error {resp.status_code}: {resp.text}")
+
+    return image_urn
 
 
-def publish_carousel(caption: str, asset_urn: str,
-                     access_token: str, person_id: str) -> str:
-    """Crea il post LinkedIn con il documento carosello."""
+def publish_image_post(caption: str, image_urns: list[str],
+                       access_token: str, person_id: str) -> str:
+    """Pubblica un post LinkedIn con una o più immagini."""
+    headers = {**LI_HEADERS_BASE, "Authorization": f"Bearer {access_token}"}
+
+    if len(image_urns) == 1:
+        content = {
+            "media": {
+                "id": image_urns[0],
+            }
+        }
+    else:
+        content = {
+            "multiImage": {
+                "images": [{"id": urn} for urn in image_urns],
+            }
+        }
+
     resp = requests.post(
         "https://api.linkedin.com/rest/posts",
-        headers={
-            "Authorization": f"Bearer {access_token}",
-            "Content-Type": "application/json",
-            "LinkedIn-Version": "202501",
-            "X-Restli-Protocol-Version": "2.0.0",
-        },
+        headers=headers,
         json={
             "author": f"urn:li:person:{person_id}",
             "commentary": caption,
@@ -102,12 +110,7 @@ def publish_carousel(caption: str, asset_urn: str,
                 "targetEntities": [],
                 "thirdPartyDistributionChannels": [],
             },
-            "content": {
-                "media": {
-                    "title": caption[:100],
-                    "id": asset_urn,
-                }
-            },
+            "content": content,
             "lifecycleState": "PUBLISHED",
             "isReshareDisabledByAuthor": False,
         },
@@ -115,35 +118,6 @@ def publish_carousel(caption: str, asset_urn: str,
     )
     if not resp.ok:
         raise RuntimeError(f"LinkedIn post error {resp.status_code}: {resp.text}")
-    return resp.headers.get("x-restli-id", "unknown")
-
-
-def publish_text_post(caption: str, access_token: str, person_id: str) -> str:
-    """Fallback: pubblica un post testuale su LinkedIn (senza carosello)."""
-    resp = requests.post(
-        "https://api.linkedin.com/rest/posts",
-        headers={
-            "Authorization": f"Bearer {access_token}",
-            "Content-Type": "application/json",
-            "LinkedIn-Version": "202501",
-            "X-Restli-Protocol-Version": "2.0.0",
-        },
-        json={
-            "author": f"urn:li:person:{person_id}",
-            "commentary": caption,
-            "visibility": "PUBLIC",
-            "distribution": {
-                "feedDistribution": "MAIN_FEED",
-                "targetEntities": [],
-                "thirdPartyDistributionChannels": [],
-            },
-            "lifecycleState": "PUBLISHED",
-            "isReshareDisabledByAuthor": False,
-        },
-        timeout=20,
-    )
-    if not resp.ok:
-        raise RuntimeError(f"LinkedIn text post error {resp.status_code}: {resp.text}")
     return resp.headers.get("x-restli-id", "unknown")
 
 
@@ -156,40 +130,40 @@ def publish_to_linkedin(pending: dict) -> bool:
         return False
 
     content = pending["content"]
+    content["topic"] = pending.get("topic", "Finanza personale")
 
     try:
-        content["topic"] = pending.get("topic", "Finanza personale")
+        # Genera le slide JPEG (1080x1080)
+        print("[telegram_bot] Generazione slide immagini...")
+        slide_paths = save_slide_jpegs(content, out_dir="automation/publish_slides")
+        print(f"[telegram_bot] {len(slide_paths)} slide generate")
 
-        # Prova carosello PDF, fallback a post testuale
-        try:
-            print("[telegram_bot] Generazione carosello PDF...")
-            pdf_path = build_carousel(content)
-            print(f"[telegram_bot] PDF creato: {pdf_path}")
+        # Carica ogni slide su LinkedIn
+        image_urns = []
+        for i, path in enumerate(slide_paths):
+            print(f"[telegram_bot] Upload slide {i+1}/{len(slide_paths)}...")
+            urn = upload_image_to_linkedin(path, access_token, person_id)
+            image_urns.append(urn)
 
-            print("[telegram_bot] Inizializzazione upload LinkedIn...")
-            upload_url, asset_urn = initialize_linkedin_upload(access_token, person_id)
+        # Pulizia file locali
+        for p in slide_paths:
+            Path(p).unlink(missing_ok=True)
+        publish_dir = Path("automation/publish_slides")
+        if publish_dir.exists():
+            try:
+                publish_dir.rmdir()
+            except OSError:
+                pass
 
-            print("[telegram_bot] Upload PDF...")
-            upload_pdf(upload_url, pdf_path, access_token)
-
-            print("[telegram_bot] Pubblicazione carosello...")
-            post_id = publish_carousel(
-                caption=content["caption"],
-                asset_urn=asset_urn,
-                access_token=access_token,
-                person_id=person_id,
-            )
-            Path(pdf_path).unlink(missing_ok=True)
-            print(f"[telegram_bot] Carosello pubblicato! ID: {post_id}")
-        except RuntimeError as carousel_err:
-            print(f"[telegram_bot] Carosello fallito ({carousel_err}), fallback testo...")
-            post_id = publish_text_post(
-                caption=content["caption"],
-                access_token=access_token,
-                person_id=person_id,
-            )
-            print(f"[telegram_bot] Post testuale pubblicato! ID: {post_id}")
-
+        # Pubblica il post con tutte le immagini
+        print(f"[telegram_bot] Pubblicazione post con {len(image_urns)} immagini...")
+        post_id = publish_image_post(
+            caption=content["caption"],
+            image_urns=image_urns,
+            access_token=access_token,
+            person_id=person_id,
+        )
+        print(f"[telegram_bot] Post pubblicato! ID: {post_id}")
         return True
 
     except Exception as e:
@@ -220,7 +194,6 @@ def main():
             updates = get_updates(bot_token, offset)
         except Exception as e:
             print(f"[telegram_bot] Errore polling: {e}")
-            # 409 = conflitto con altra istanza, aspetta più a lungo
             wait = 15 if "409" in str(e) else 5
             time.sleep(wait)
             continue
@@ -236,12 +209,12 @@ def main():
             print(f"[telegram_bot] {user}: {data}")
 
             if data == "approve":
-                answer_callback(bot_token, cb["id"], "⏳ Generazione carosello...")
-                send_message(bot_token, chat_id, "🎨 Creo le slide e pubblico su LinkedIn...")
+                answer_callback(bot_token, cb["id"], "⏳ Carico le slide su LinkedIn...")
+                send_message(bot_token, chat_id, "🎨 Carico le slide e pubblico su LinkedIn...")
                 pending = load_pending()
                 if pending and publish_to_linkedin(pending):
                     send_message(bot_token, chat_id,
-                        f"✅ *Carosello pubblicato su LinkedIn!*\n\n_{pending['topic']}_")
+                        f"✅ *Post pubblicato su LinkedIn!*\n\n_{pending['topic']}_")
                 else:
                     send_message(bot_token, chat_id,
                         "❌ Errore pubblicazione. Controlla i log su GitHub Actions.")
