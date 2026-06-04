@@ -95,9 +95,11 @@ def slide_cover(title: str, topic: str) -> Image.Image:
     draw_corner_accent(draw)
     draw_branding(draw)
 
-    # Decorazione geometrica: rettangolo vuoto grande in basso a destra
-    draw.rectangle([680, 620, W - 40, H - 60], outline=(*NAVY_MID, 255), width=2)
-    draw.rectangle([700, 640, W - 20, H - 40], outline=(*GOLD, 40), width=1)
+    # Decorazioni geometriche eleganti: linee angolari in basso a destra
+    for i, offset in enumerate([0, 18, 36]):
+        alpha = 60 - i * 18
+        draw.line([W - 80 - offset, H - 80, W - 80, H - 80 - offset],
+                  fill=(*GOLD, alpha), width=1)
 
     # Topic tag — pillola dorata in alto
     font_tag = get_font(26)
@@ -120,6 +122,12 @@ def slide_cover(title: str, topic: str) -> Image.Image:
 
     # Linea sottile sotto il titolo
     draw_thin_line(draw, margin, y + 20, margin + 120)
+
+    # Cerchi decorativi in basso a destra
+    for radius, alpha in [(180, 18), (130, 30), (80, 45)]:
+        draw.ellipse([W - radius * 2 + 60, H - radius * 2 + 60,
+                      W + 60, H + 60],
+                     outline=(*GOLD, alpha), width=1)
 
     # Swipe hint in basso a sinistra
     font_hint = get_font(28)
@@ -222,19 +230,25 @@ def slide_cta(author_name: str) -> Image.Image:
     cb = draw.textbbox((0, 0), cta, font=font_cta)
     draw.text(((W - (cb[2] - cb[0])) // 2, 614), cta, font=font_cta, fill=WHITE)
 
-    # Azioni
+    # Azioni — bullet dorato + testo (no emoji, non supportate da DejaVu)
     font_act = get_font(32)
     actions = [
-        ("💬", "Commenta la tua esperienza"),
-        ("♻️", "Condividi con chi ne ha bisogno"),
-        ("➕", "Seguimi per altri contenuti"),
+        "Commenta la tua esperienza",
+        "Condividi con chi ne ha bisogno",
+        "Seguimi per altri contenuti",
     ]
     y = 692
-    for icon, text in actions:
-        line = f"{icon}  {text}"
-        lb = draw.textbbox((0, 0), line, font=font_act)
-        draw.text(((W - (lb[2] - lb[0])) // 2, y), line, font=font_act, fill=SLATE)
-        y += 50
+    bullet_r = 5
+    for action in actions:
+        lb = draw.textbbox((0, 0), action, font=font_act)
+        text_w = lb[2] - lb[0]
+        total_w = bullet_r * 2 + 16 + text_w
+        x = (W - total_w) // 2
+        # Pallino dorato
+        draw.ellipse([x, y + 12, x + bullet_r * 2, y + 12 + bullet_r * 2], fill=GOLD)
+        # Testo
+        draw.text((x + bullet_r * 2 + 16, y), action, font=font_act, fill=SLATE)
+        y += 52
 
     return img
 
