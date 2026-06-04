@@ -20,9 +20,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Installa font di sistema
-        run: sudo apt-get install -y fonts-dejavu fonts-liberation
-
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -30,6 +27,9 @@ jobs:
 
       - name: Installa dipendenze Python
         run: pip install -r automation/requirements.txt
+
+      - name: Installa Playwright Chromium
+        run: playwright install chromium --with-deps
 
       - name: Genera contenuto e invia su Telegram
         env:
