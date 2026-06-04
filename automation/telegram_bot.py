@@ -128,6 +128,7 @@ def publish_to_linkedin(pending: dict) -> bool:
 
     try:
         # 1. Genera il PDF carosello
+        content["topic"] = pending.get("topic", "Finanza personale")
         print("[telegram_bot] Generazione carosello PDF...")
         pdf_path = build_carousel(content)
         print(f"[telegram_bot] PDF creato: {pdf_path}")
@@ -182,7 +183,9 @@ def main():
             updates = get_updates(bot_token, offset)
         except Exception as e:
             print(f"[telegram_bot] Errore polling: {e}")
-            time.sleep(5)
+            # 409 = conflitto con altra istanza, aspetta più a lungo
+            wait = 15 if "409" in str(e) else 5
+            time.sleep(wait)
             continue
 
         for update in updates:
