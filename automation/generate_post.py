@@ -119,7 +119,7 @@ def send_to_telegram(content: dict, topic: str) -> dict:
     # 1. Genera slide immagini
     print("[generate_post] Generazione slide per anteprima...")
     content["topic"] = topic
-    slide_paths = save_slide_jpegs(content)
+    slide_paths = save_slide_jpegs(content, size=800)
     print(f"[generate_post] {len(slide_paths)} slide generate")
 
     # 2. Manda le immagini come album

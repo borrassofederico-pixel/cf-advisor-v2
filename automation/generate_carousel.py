@@ -1,36 +1,34 @@
 """
-Genera un carosello LinkedIn come PDF multi-pagina.
-Ogni pagina = una slide visiva con design navy/oro.
+Genera un carosello LinkedIn con design elegante e minimalista.
 
-Struttura del carosello (6 slide):
-  0 — Cover:   titolo grande + tema
-  1-4 — Punti: un concetto per slide con numero e testo
-  5 — CTA:     invito a seguire / commentare
+Struttura (6 slide):
+  0 — Cover:   titolo + tema
+  1-4 — Punti: headline + body
+  5 — CTA:     invito a seguire
 """
 
 import os
-import json
-import textwrap
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 from fpdf import FPDF
 
-# ── Dimensioni slide (LinkedIn consiglia 1080×1080 per i documenti) ──────────
 W, H = 1080, 1080
 
-# ── Palette ──────────────────────────────────────────────────────────────────
-NAVY      = (11, 25, 41)
-NAVY_LIGHT= (18, 40, 65)
-GOLD      = (196, 160, 80)
-GOLD_DARK = (150, 118, 50)
-WHITE     = (255, 255, 255)
-GRAY      = (180, 180, 180)
+# ── Palette raffinata ─────────────────────────────────────────────────────────
+NAVY        = (7, 18, 36)
+NAVY_MID    = (14, 32, 60)
+GOLD        = (210, 172, 90)
+GOLD_LIGHT  = (230, 200, 130)
+WHITE       = (255, 255, 255)
+CREAM       = (240, 235, 220)
+SLATE       = (155, 165, 175)
+DARK_SLATE  = (80, 95, 110)
 
-# ── Font (usa i font di sistema disponibili su Ubuntu GitHub Actions) ─────────
+
 def get_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
     candidates = [
-        f"/usr/share/fonts/truetype/dejavu/DejaVuSans{'-Bold' if bold else ''}.ttf",
         f"/usr/share/fonts/truetype/liberation/LiberationSans{'-Bold' if bold else '-Regular'}.ttf",
+        f"/usr/share/fonts/truetype/dejavu/DejaVuSans{'-Bold' if bold else ''}.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     ]
     for path in candidates:
@@ -39,40 +37,12 @@ def get_font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
     return ImageFont.load_default()
 
 
-def draw_background(draw: ImageDraw, slide_idx: int, total: int) -> None:
-    """Sfondo sfumato navy con decorazioni geometriche."""
-    draw.rectangle([0, 0, W, H], fill=NAVY)
-
-    # Rettangolo decorativo in alto a sinistra
-    draw.rectangle([0, 0, 6, H], fill=GOLD)
-
-    # Cerchio decorativo in basso a destra (parziale)
-    cx, cy, r = W + 80, H + 80, 300
-    draw.ellipse([cx - r, cy - r, cx + r, cy + r],
-                 outline=(*GOLD, 30), width=2)
-
-    # Indicatore progresso slide in basso
-    bar_y = H - 18
-    bar_h = 4
-    draw.rectangle([40, bar_y, W - 40, bar_y + bar_h], fill=NAVY_LIGHT)
-    if total > 1:
-        progress = int((W - 80) * (slide_idx / (total - 1)))
-        draw.rectangle([40, bar_y, 40 + progress, bar_y + bar_h], fill=GOLD)
-
-    # Branding "FB" in basso a destra
-    font_brand = get_font(22, bold=True)
-    draw.text((W - 58, H - 42), "FB", font=font_brand, fill=(*GOLD, 180))
-
-
 def wrap_text(text: str, font, max_width: int, draw: ImageDraw) -> list[str]:
-    """Spezza il testo per adattarlo alla larghezza."""
     words = text.split()
-    lines = []
-    current = ""
+    lines, current = [], ""
     for word in words:
         test = f"{current} {word}".strip()
-        bbox = draw.textbbox((0, 0), test, font=font)
-        if bbox[2] > max_width and current:
+        if draw.textbbox((0, 0), test, font=font)[2] > max_width and current:
             lines.append(current)
             current = word
         else:
@@ -82,30 +52,78 @@ def wrap_text(text: str, font, max_width: int, draw: ImageDraw) -> list[str]:
     return lines
 
 
+def draw_base(draw: ImageDraw) -> None:
+    """Sfondo navy uniforme."""
+    draw.rectangle([0, 0, W, H], fill=NAVY)
+
+
+def draw_corner_accent(draw: ImageDraw) -> None:
+    """Angolo dorato in alto a sinistra — linea sottile verticale."""
+    draw.rectangle([0, 0, 5, H], fill=GOLD)
+
+
+def draw_progress_dots(draw: ImageDraw, current: int, total: int) -> None:
+    """Pallini di progresso in basso al centro."""
+    dot_r = 5
+    spacing = 22
+    n = total
+    start_x = W // 2 - (n - 1) * spacing // 2
+    y = H - 38
+    for i in range(n):
+        x = start_x + i * spacing
+        if i == current:
+            draw.ellipse([x - dot_r, y - dot_r, x + dot_r, y + dot_r], fill=GOLD)
+        else:
+            draw.ellipse([x - dot_r + 1, y - dot_r + 1, x + dot_r - 1, y + dot_r - 1],
+                         outline=DARK_SLATE, width=2)
+
+
+def draw_branding(draw: ImageDraw) -> None:
+    """Branding minimalista in basso a destra."""
+    font = get_font(20, bold=True)
+    draw.text((W - 56, H - 48), "FB", font=font, fill=(*GOLD, 140))
+
+
+def draw_thin_line(draw: ImageDraw, x1: int, y: int, x2: int, color=GOLD) -> None:
+    draw.rectangle([x1, y, x2, y + 1], fill=color)
+
+
 def slide_cover(title: str, topic: str) -> Image.Image:
     img = Image.new("RGB", (W, H), NAVY)
     draw = ImageDraw.Draw(img)
-    draw_background(draw, 0, 1)
+    draw_base(draw)
+    draw_corner_accent(draw)
+    draw_branding(draw)
 
-    # Linea oro orizzontale decorativa
-    draw.rectangle([60, 320, W - 60, 322], fill=GOLD)
+    # Decorazione geometrica: rettangolo vuoto grande in basso a destra
+    draw.rectangle([680, 620, W - 40, H - 60], outline=(*NAVY_MID, 255), width=2)
+    draw.rectangle([700, 640, W - 20, H - 40], outline=(*GOLD, 40), width=1)
 
-    # Sovratitolo
-    font_over = get_font(28)
-    draw.text((60, 270), topic.upper(), font=font_over, fill=GOLD)
+    # Topic tag — pillola dorata in alto
+    font_tag = get_font(26)
+    tag = topic.upper()
+    tag_bbox = draw.textbbox((0, 0), tag, font=font_tag)
+    tag_w = tag_bbox[2] - tag_bbox[0]
+    tag_x, tag_y = 72, 90
+    draw.rectangle([tag_x - 14, tag_y - 8, tag_x + tag_w + 14, tag_y + 36],
+                   outline=GOLD, width=1)
+    draw.text((tag_x, tag_y), tag, font=font_tag, fill=GOLD)
 
-    # Titolo principale (grande, multi-riga)
-    font_title = get_font(72, bold=True)
-    margin = 60
+    # Titolo principale
+    font_title = get_font(76, bold=True)
+    margin = 72
     lines = wrap_text(title, font_title, W - margin * 2, draw)
-    y = 345
+    y = 200
     for line in lines[:4]:
         draw.text((margin, y), line, font=font_title, fill=WHITE)
-        y += 84
+        y += 90
 
-    # Swipe CTA in basso
-    font_cta = get_font(30)
-    draw.text((60, H - 90), "→  Scorri per scoprire di più", font=font_cta, fill=GRAY)
+    # Linea sottile sotto il titolo
+    draw_thin_line(draw, margin, y + 20, margin + 120)
+
+    # Swipe hint in basso a sinistra
+    font_hint = get_font(28)
+    draw.text((margin, H - 90), "scorri →", font=font_hint, fill=SLATE)
 
     return img
 
@@ -114,37 +132,50 @@ def slide_point(number: int, headline: str, body: str,
                 slide_idx: int, total: int) -> Image.Image:
     img = Image.new("RGB", (W, H), NAVY)
     draw = ImageDraw.Draw(img)
-    draw_background(draw, slide_idx, total)
+    draw_base(draw)
+    draw_corner_accent(draw)
+    draw_branding(draw)
+    draw_progress_dots(draw, slide_idx, total)
 
-    # Numero grande in background (decorativo)
-    font_num_bg = get_font(280, bold=True)
-    draw.text((W - 220, H // 2 - 180), str(number),
-              font=font_num_bg, fill=(*NAVY_LIGHT, 255))
+    margin = 80
 
-    # Numero piccolo evidenziato
-    font_num = get_font(52, bold=True)
-    draw.rectangle([60, 80, 114, 134], fill=GOLD)
-    draw.text((72, 83), str(number), font=font_num, fill=NAVY)
+    # Numero decorativo grande (watermark, molto sottile)
+    font_num_bg = get_font(320, bold=True)
+    num_str = str(number)
+    nb_bbox = draw.textbbox((0, 0), num_str, font=font_num_bg)
+    nb_w = nb_bbox[2] - nb_bbox[0]
+    draw.text((W - nb_w - 20, H // 2 - 200), num_str,
+              font=font_num_bg, fill=(*NAVY_MID, 255))
+
+    # Badge numero — cerchio dorato piccolo
+    cx, cy, r = margin + 32, 100, 32
+    draw.ellipse([cx - r, cy - r, cx + r, cy + r], outline=GOLD, width=2)
+    font_num = get_font(34, bold=True)
+    n_bbox = draw.textbbox((0, 0), num_str, font=font_num)
+    draw.text((cx - (n_bbox[2] - n_bbox[0]) // 2,
+               cy - (n_bbox[3] - n_bbox[1]) // 2 - 2),
+              num_str, font=font_num, fill=GOLD)
 
     # Headline
-    font_h = get_font(62, bold=True)
-    margin = 60
+    font_h = get_font(64, bold=True)
+    y = 185
     lines = wrap_text(headline, font_h, W - margin * 2, draw)
-    y = 180
     for line in lines[:3]:
         draw.text((margin, y), line, font=font_h, fill=WHITE)
-        y += 74
+        y += 78
 
-    # Separatore
-    draw.rectangle([margin, y + 10, margin + 80, y + 14], fill=GOLD)
-    y += 50
+    # Separatore elegante: linea + punto
+    sep_y = y + 28
+    draw.rectangle([margin, sep_y, margin + 60, sep_y + 2], fill=GOLD)
+    draw.ellipse([margin + 68, sep_y - 3, margin + 76, sep_y + 5], fill=GOLD)
 
-    # Body text
+    # Body
     font_b = get_font(38)
-    body_lines = wrap_text(body, font_b, W - margin * 2, draw)
+    y = sep_y + 44
+    body_lines = wrap_text(body, font_b, W - margin * 2 - 20, draw)
     for line in body_lines[:6]:
-        draw.text((margin, y), line, font=font_b, fill=GRAY)
-        y += 52
+        draw.text((margin, y), line, font=font_b, fill=CREAM)
+        y += 54
 
     return img
 
@@ -152,70 +183,81 @@ def slide_point(number: int, headline: str, body: str,
 def slide_cta(author_name: str) -> Image.Image:
     img = Image.new("RGB", (W, H), NAVY)
     draw = ImageDraw.Draw(img)
-    draw_background(draw, 1, 1)
+    draw_base(draw)
+    draw_corner_accent(draw)
+    draw_branding(draw)
 
-    # Cerchio avatar placeholder
-    cx, cy, r = W // 2, 300, 90
-    draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=GOLD)
-    font_init = get_font(72, bold=True)
-    # Iniziali nel cerchio
+    # Cerchio monogramma
+    cx, cy, r = W // 2, 310, 100
+    draw.ellipse([cx - r, cy - r, cx + r, cy + r], outline=GOLD, width=2)
+    # Cerchio interno sottile
+    draw.ellipse([cx - r + 8, cy - r + 8, cx + r - 8, cy + r - 8],
+                 outline=(*GOLD, 60), width=1)
+    # Iniziali
     initials = "".join(w[0] for w in author_name.split()[:2]).upper()
-    bbox = draw.textbbox((0, 0), initials, font=font_init)
-    tw = bbox[2] - bbox[0]
-    draw.text((cx - tw // 2, cy - 45), initials, font=font_init, fill=NAVY)
+    font_init = get_font(64, bold=True)
+    ib = draw.textbbox((0, 0), initials, font=font_init)
+    draw.text((cx - (ib[2] - ib[0]) // 2, cy - (ib[3] - ib[1]) // 2 - 2),
+              initials, font=font_init, fill=GOLD)
 
     # Nome
-    font_name = get_font(48, bold=True)
-    bbox = draw.textbbox((0, 0), author_name, font=font_name)
-    tw = bbox[2] - bbox[0]
-    draw.text(((W - tw) // 2, 420), author_name, font=font_name, fill=WHITE)
+    font_name = get_font(46, bold=True)
+    nb = draw.textbbox((0, 0), author_name, font=font_name)
+    draw.text(((W - (nb[2] - nb[0])) // 2, 448), author_name,
+              font=font_name, fill=WHITE)
 
     # Ruolo
-    font_role = get_font(32)
-    role = "Consulente Finanziario"
-    bbox = draw.textbbox((0, 0), role, font=font_role)
-    tw = bbox[2] - bbox[0]
-    draw.text(((W - tw) // 2, 490), role, font=font_role, fill=GOLD)
+    font_role = get_font(30)
+    role = "Consulente Finanziario Indipendente"
+    rb = draw.textbbox((0, 0), role, font=font_role)
+    draw.text(((W - (rb[2] - rb[0])) // 2, 512), role,
+              font=font_role, fill=GOLD)
 
-    # Separatore
-    draw.rectangle([W // 2 - 60, 560, W // 2 + 60, 563], fill=GOLD)
+    # Linea decorativa centrata
+    draw_thin_line(draw, W // 2 - 50, 578, W // 2 + 50)
 
-    # CTA testo
-    font_cta = get_font(44, bold=True)
-    cta1 = "Ti è stato utile?"
-    bbox = draw.textbbox((0, 0), cta1, font=font_cta)
-    draw.text(((W - bbox[2]) // 2, 600), cta1, font=font_cta, fill=WHITE)
+    # CTA
+    font_cta = get_font(42, bold=True)
+    cta = "Ti è stato utile?"
+    cb = draw.textbbox((0, 0), cta, font=font_cta)
+    draw.text(((W - (cb[2] - cb[0])) // 2, 614), cta, font=font_cta, fill=WHITE)
 
-    font_cta2 = get_font(36)
-    cta2 = "💬 Commenta  •  ♻️ Condividi  •  ➕ Seguimi"
-    bbox = draw.textbbox((0, 0), cta2, font=font_cta2)
-    draw.text(((W - bbox[2]) // 2, 680), cta2, font=font_cta2, fill=GRAY)
+    # Azioni
+    font_act = get_font(32)
+    actions = [
+        ("💬", "Commenta la tua esperienza"),
+        ("♻️", "Condividi con chi ne ha bisogno"),
+        ("➕", "Seguimi per altri contenuti"),
+    ]
+    y = 692
+    for icon, text in actions:
+        line = f"{icon}  {text}"
+        lb = draw.textbbox((0, 0), line, font=font_act)
+        draw.text(((W - (lb[2] - lb[0])) // 2, y), line, font=font_act, fill=SLATE)
+        y += 50
 
     return img
 
 
 def build_slides(content: dict) -> list[Image.Image]:
-    """Genera la lista di slide PIL dal contenuto del carosello."""
     slides: list[Image.Image] = []
     slides.append(slide_cover(content["title"], content["topic"]))
     points = content["points"]
-    total_slides = 1 + len(points) + 1
+    total_content = len(points)
     for i, point in enumerate(points):
         slides.append(slide_point(
             number=i + 1,
             headline=point["headline"],
             body=point["body"],
-            slide_idx=i + 1,
-            total=total_slides - 1
+            slide_idx=i,
+            total=total_content,
         ))
     slides.append(slide_cta(content.get("author", "Federico Borrasso")))
     return slides
 
 
 def build_carousel(content: dict, output_path: str = "automation/carousel.pdf") -> str:
-    """Genera il PDF carosello da pubblicare su LinkedIn."""
     slides = build_slides(content)
-
     pdf = FPDF(unit="pt", format=[W, H])
     tmp_dir = Path("automation/tmp_slides")
     tmp_dir.mkdir(exist_ok=True)
@@ -227,52 +269,38 @@ def build_carousel(content: dict, output_path: str = "automation/carousel.pdf") 
         pdf.image(tmp_path, 0, 0, W, H)
 
     pdf.output(output_path)
-
     for f in tmp_dir.glob("*.jpg"):
         f.unlink()
     tmp_dir.rmdir()
-
     return output_path
 
 
-def save_slide_jpegs(content: dict, out_dir: str = "automation/preview_slides") -> list[str]:
-    """Salva le slide come JPEG e restituisce i path — usato per l'anteprima Telegram."""
+def save_slide_jpegs(content: dict, out_dir: str = "automation/preview_slides",
+                     size: int = 1080) -> list[str]:
+    """Salva le slide come JPEG. size=1080 per LinkedIn, 800 per Telegram preview."""
     slides = build_slides(content)
     out = Path(out_dir)
     out.mkdir(exist_ok=True)
     paths = []
     for idx, img in enumerate(slides):
-        # Ridimensiona a 800x800 per Telegram (più leggero)
-        thumb = img.resize((800, 800), Image.LANCZOS)
+        if size != W:
+            img = img.resize((size, size), Image.LANCZOS)
         p = str(out / f"slide_{idx:02d}.jpg")
-        thumb.save(p, "JPEG", quality=88)
+        img.save(p, "JPEG", quality=92)
         paths.append(p)
     return paths
 
 
 if __name__ == "__main__":
-    # Test locale
     test_content = {
-        "title": "5 errori che distruggono il tuo portafoglio",
-        "topic": "Finanza comportamentale",
+        "title": "PAC: investi ogni mese, costruisci il futuro",
+        "topic": "Piani di Accumulo del Capitale",
         "author": "Federico Borrasso",
         "points": [
-            {
-                "headline": "Vendere nel panico",
-                "body": "Il mercato scende e vendi tutto. Realizzi la perdita e perdi il rimbalzo. È l'errore più costoso."
-            },
-            {
-                "headline": "Ignorare l'inflazione",
-                "body": "I soldi sul conto corrente perdono potere d'acquisto ogni anno. Il 2% annuo dimezza il valore in 35 anni."
-            },
-            {
-                "headline": "Manca diversificazione",
-                "body": "Concentrare tutto su un solo asset o mercato amplifica il rischio senza aumentare il rendimento atteso."
-            },
-            {
-                "headline": "Orizzonte temporale sbagliato",
-                "body": "Investire a breve termine capitali che servono tra 20 anni — o viceversa — porta a scelte irrazionali."
-            },
+            {"headline": "Cos'è un PAC", "body": "Investi una cifra fissa ogni mese, indipendentemente dal mercato. Semplice, automatico, efficace."},
+            {"headline": "Dollar Cost Averaging", "body": "Compri più quote quando i prezzi scendono e meno quando salgono. Il tempo lavora per te."},
+            {"headline": "Quanto serve per iniziare", "body": "Anche 50€ al mese sono sufficienti. L'abitudine conta più dell'importo iniziale."},
+            {"headline": "Errori da evitare", "body": "Interrompere nei momenti di crisi è l'errore più costoso. Il PAC funziona proprio nelle fasi difficili."},
         ]
     }
     path = build_carousel(test_content)
