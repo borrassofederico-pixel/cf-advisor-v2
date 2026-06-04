@@ -108,7 +108,7 @@ def publish_ugc_post(caption: str, asset_urns: list[str],
         "https://api.linkedin.com/v2/ugcPosts",
         headers=headers,
         json={
-            "author": f"urn:li:person:{person_id}",
+            "author": f"urn:li:member:{person_id}",
             "lifecycleState": "PUBLISHED",
             "specificContent": {
                 "com.linkedin.ugc.ShareContent": {
