@@ -124,7 +124,7 @@ def publish_to_linkedin(pending: dict) -> bool:
 
     try:
         print("[telegram_bot] Generazione slide immagini...")
-        slide_paths = save_slide_jpegs(content, out_dir="automation/publish_slides")
+        slide_paths = save_slide_jpegs(content, out_dir="automation/publish_slides", size=1080)
         print(f"[telegram_bot] {len(slide_paths)} slide generate")
 
         image_urns = []
