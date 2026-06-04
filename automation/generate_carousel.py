@@ -194,23 +194,12 @@ def slide_cta(author_name: str) -> Image.Image:
     return img
 
 
-def build_carousel(content: dict, output_path: str = "automation/carousel.pdf") -> str:
-    """
-    content = {
-      "title": "...",
-      "topic": "...",
-      "points": [{"headline": "...", "body": "..."}, ...],  # 3-5 punti
-      "author": "Federico Borrasso"
-    }
-    """
+def build_slides(content: dict) -> list[Image.Image]:
+    """Genera la lista di slide PIL dal contenuto del carosello."""
     slides: list[Image.Image] = []
-
-    # Slide 0: cover
     slides.append(slide_cover(content["title"], content["topic"]))
-
-    # Slide 1-N: punti
     points = content["points"]
-    total_slides = 1 + len(points) + 1  # cover + points + cta
+    total_slides = 1 + len(points) + 1
     for i, point in enumerate(points):
         slides.append(slide_point(
             number=i + 1,
@@ -219,11 +208,14 @@ def build_carousel(content: dict, output_path: str = "automation/carousel.pdf") 
             slide_idx=i + 1,
             total=total_slides - 1
         ))
-
-    # Ultima slide: CTA
     slides.append(slide_cta(content.get("author", "Federico Borrasso")))
+    return slides
 
-    # ── Salva come PDF (A4 landscape per LinkedIn, 1:1 aspect ratio) ─────────
+
+def build_carousel(content: dict, output_path: str = "automation/carousel.pdf") -> str:
+    """Genera il PDF carosello da pubblicare su LinkedIn."""
+    slides = build_slides(content)
+
     pdf = FPDF(unit="pt", format=[W, H])
     tmp_dir = Path("automation/tmp_slides")
     tmp_dir.mkdir(exist_ok=True)
@@ -236,12 +228,26 @@ def build_carousel(content: dict, output_path: str = "automation/carousel.pdf") 
 
     pdf.output(output_path)
 
-    # Pulizia file temporanei
     for f in tmp_dir.glob("*.jpg"):
         f.unlink()
     tmp_dir.rmdir()
 
     return output_path
+
+
+def save_slide_jpegs(content: dict, out_dir: str = "automation/preview_slides") -> list[str]:
+    """Salva le slide come JPEG e restituisce i path — usato per l'anteprima Telegram."""
+    slides = build_slides(content)
+    out = Path(out_dir)
+    out.mkdir(exist_ok=True)
+    paths = []
+    for idx, img in enumerate(slides):
+        # Ridimensiona a 800x800 per Telegram (più leggero)
+        thumb = img.resize((800, 800), Image.LANCZOS)
+        p = str(out / f"slide_{idx:02d}.jpg")
+        thumb.save(p, "JPEG", quality=88)
+        paths.append(p)
+    return paths
 
 
 if __name__ == "__main__":

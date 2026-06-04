@@ -4,10 +4,15 @@ usando Claude API, poi invia anteprima su Telegram per approvazione.
 """
 
 import os
+import sys
 import json
 import anthropic
 import requests
 from datetime import datetime
+from pathlib import Path
+
+sys.path.insert(0, os.path.dirname(__file__))
+from generate_carousel import save_slide_jpegs
 
 # ── Temi a rotazione ─────────────────────────────────────────────────────────
 TOPICS = [
@@ -67,6 +72,33 @@ def generate_content(topic: str) -> dict:
     return json.loads(raw.strip())
 
 
+def send_slides_to_telegram(bot_token: str, chat_id: str,
+                             slide_paths: list[str], caption: str) -> None:
+    """Manda le slide come album foto su Telegram (max 10 immagini)."""
+    media = []
+    files = {}
+    for i, path in enumerate(slide_paths[:10]):
+        key = f"photo{i}"
+        media.append({
+            "type": "photo",
+            "media": f"attach://{key}",
+            "caption": caption if i == 0 else "",
+            "parse_mode": "Markdown",
+        })
+        files[key] = (Path(path).name, open(path, "rb"), "image/jpeg")
+
+    resp = requests.post(
+        f"https://api.telegram.org/bot{bot_token}/sendMediaGroup",
+        data={"chat_id": chat_id, "media": json.dumps(media)},
+        files=files,
+        timeout=60,
+    )
+    # Chiudi i file aperti
+    for _, (_, f, _) in files.items():
+        f.close()
+    resp.raise_for_status()
+
+
 def send_to_telegram(content: dict, topic: str) -> dict:
     bot_token = os.environ["TELEGRAM_BOT_TOKEN"]
     chat_id = os.environ["TELEGRAM_CHAT_ID"]
@@ -81,23 +113,26 @@ def send_to_telegram(content: dict, topic: str) -> dict:
     with open("automation/pending_post.json", "w") as f:
         json.dump(pending, f, ensure_ascii=False, indent=2)
 
-    # Anteprima testuale per Telegram
-    points_preview = "\n".join(
-        f"  {i+1}. *{p['headline']}*\n      _{p['body']}_"
-        for i, p in enumerate(content["points"])
-    )
+    # 1. Genera slide immagini
+    print("[generate_post] Generazione slide per anteprima...")
+    content["topic"] = topic
+    slide_paths = save_slide_jpegs(content)
+    print(f"[generate_post] {len(slide_paths)} slide generate")
 
-    preview = (
-        f"🎠 *Carosello LinkedIn di oggi*\n"
-        f"🏷️ Tema: _{topic}_\n\n"
-        f"📌 *{content['title']}*\n\n"
-        f"{points_preview}\n\n"
-        f"{'─' * 28}\n"
-        f"📝 *Caption post:*\n{content['caption']}\n"
-        f"{'─' * 28}\n\n"
-        f"Approvi la pubblicazione?"
-    )
+    # 2. Manda le immagini come album
+    album_caption = f"🎠 *{content['title']}*\n🏷️ _{topic}_"
+    send_slides_to_telegram(bot_token, chat_id, slide_paths, album_caption)
 
+    # Pulizia immagini preview
+    for p in slide_paths:
+        Path(p).unlink(missing_ok=True)
+    Path("automation/preview_slides").rmdir() if Path("automation/preview_slides").exists() else None
+
+    # 3. Manda messaggio con bottoni di approvazione
+    approval_text = (
+        f"📝 *Caption del post:*\n{content['caption']}\n\n"
+        f"Approvi la pubblicazione su LinkedIn?"
+    )
     keyboard = {
         "inline_keyboard": [[
             {"text": "✅ Pubblica", "callback_data": "approve"},
@@ -105,12 +140,11 @@ def send_to_telegram(content: dict, topic: str) -> dict:
             {"text": "❌ Salta oggi", "callback_data": "skip"},
         ]]
     }
-
     resp = requests.post(
         f"https://api.telegram.org/bot{bot_token}/sendMessage",
         json={
             "chat_id": chat_id,
-            "text": preview,
+            "text": approval_text,
             "parse_mode": "Markdown",
             "reply_markup": json.dumps(keyboard),
         },
