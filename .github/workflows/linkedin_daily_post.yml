@@ -1,0 +1,41 @@
+name: LinkedIn Daily Post
+
+on:
+  schedule:
+    # Ogni giorno alle 08:30 ora italiana (07:30 UTC, estate) — aggiusta UTC offset se in ora solare
+    - cron: "30 7 * * 1-5"   # Lunedì–Venerdì
+  workflow_dispatch:           # Trigger manuale dal tab Actions
+
+jobs:
+  generate-and-approve:
+    name: Genera post e attendi approvazione
+    runs-on: ubuntu-latest
+    timeout-minutes: 45        # 30 min polling + buffer
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installa dipendenze
+        run: pip install -r automation/requirements.txt
+
+      - name: Genera post e invia su Telegram
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python automation/generate_post.py
+
+      - name: Attendi approvazione Telegram (30 min)
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          LINKEDIN_ACCESS_TOKEN: ${{ secrets.LINKEDIN_ACCESS_TOKEN }}
+          LINKEDIN_PERSON_ID: ${{ secrets.LINKEDIN_PERSON_ID }}
+          TELEGRAM_POLL_MINUTES: "30"
+        run: python automation/telegram_bot.py
