@@ -2,36 +2,38 @@ name: LinkedIn Daily Post
 
 on:
   schedule:
-    # Ogni giorno alle 08:30 ora italiana (07:30 UTC, estate) — aggiusta UTC offset se in ora solare
-    - cron: "30 7 * * 1-5"   # Lunedì–Venerdì
-  workflow_dispatch:           # Trigger manuale dal tab Actions
+    - cron: "30 7 * * 1-5"   # Lunedì–Venerdì 08:30 ora italiana (estate)
+  workflow_dispatch:
 
 jobs:
   generate-and-approve:
     name: Genera post e attendi approvazione
     runs-on: ubuntu-latest
-    timeout-minutes: 45        # 30 min polling + buffer
+    timeout-minutes: 45
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Installa font di sistema
+        run: sudo apt-get install -y fonts-dejavu fonts-liberation
 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      - name: Installa dipendenze
+      - name: Installa dipendenze Python
         run: pip install -r automation/requirements.txt
 
-      - name: Genera post e invia su Telegram
+      - name: Genera contenuto e invia su Telegram
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python automation/generate_post.py
 
-      - name: Attendi approvazione Telegram (30 min)
+      - name: Attendi approvazione e pubblica (30 min)
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
