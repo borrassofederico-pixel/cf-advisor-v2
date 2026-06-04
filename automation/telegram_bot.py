@@ -4,6 +4,7 @@ come documento PDF (ogni pagina = una slide del carosello).
 """
 
 import os
+import sys
 import json
 import time
 import requests
@@ -209,7 +210,12 @@ def main():
             elif data == "regenerate":
                 answer_callback(bot_token, cb["id"], "🔄 Rigenero...")
                 send_message(bot_token, chat_id, "🔄 Rigenerazione in corso, attendi...")
-                subprocess.run(["python", "automation/generate_post.py"], check=False)
+                subprocess.run(
+                    [sys.executable, "automation/generate_post.py"],
+                    check=False,
+                    cwd=os.getcwd(),
+                    env=os.environ.copy(),
+                )
                 start_time = time.time()
 
             elif data == "skip":
