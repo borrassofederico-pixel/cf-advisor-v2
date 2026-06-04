@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #f0f0f0;
+    display: flex;
+    gap: 40px;
+    padding: 40px;
+    font-family: 'Georgia', serif;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* ── VERSIONE 1: Monogramma classico su sfondo navy ── */
+  .logo-1 {
+    width: 300px;
+    height: 300px;
+    background: #0a1628;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+  }
+  .logo-1::before {
+    content: '';
+    position: absolute;
+    inset: 18px;
+    border: 1px solid rgba(196,160,80,0.4);
+  }
+  .logo-1 .letters {
+    font-family: 'Didot', 'Bodoni MT', 'Playfair Display', 'Times New Roman', serif;
+    font-size: 108px;
+    font-weight: 400;
+    letter-spacing: -4px;
+    color: #fff;
+    line-height: 1;
+    position: relative;
+  }
+  .logo-1 .letters span {
+    color: #c4a050;
+  }
+
+  /* ── VERSIONE 2: Solo iniziali, linea oro sottile ── */
+  .logo-2 {
+    width: 300px;
+    height: 300px;
+    background: #fff;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid #e0e0e0;
+    gap: 12px;
+  }
+  .logo-2 .letters {
+    font-family: 'Optima', 'Futura', 'Century Gothic', sans-serif;
+    font-size: 96px;
+    font-weight: 300;
+    letter-spacing: 18px;
+    color: #1a2744;
+    line-height: 1;
+    padding-left: 18px;
+  }
+  .logo-2 .line {
+    width: 60px;
+    height: 1px;
+    background: #c4a050;
+  }
+  .logo-2 .tagline {
+    font-family: 'Optima', 'Futura', sans-serif;
+    font-size: 10px;
+    letter-spacing: 4px;
+    color: #8a8a8a;
+    text-transform: uppercase;
+    padding-left: 4px;
+  }
+
+  /* ── VERSIONE 3: Cerchio minimalista ── */
+  .logo-3 {
+    width: 300px;
+    height: 300px;
+    background: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid #e0e0e0;
+  }
+  .logo-3 .circle {
+    width: 210px;
+    height: 210px;
+    border: 1.5px solid #1a2744;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+  }
+  .logo-3 .letters {
+    font-family: 'Garamond', 'Palatino', 'Book Antiqua', serif;
+    font-size: 88px;
+    font-weight: 400;
+    color: #1a2744;
+    letter-spacing: -2px;
+    line-height: 1;
+  }
+
+  /* ── VERSIONE 4: Sfondo oro, testo bianco ── */
+  .logo-4 {
+    width: 300px;
+    height: 300px;
+    background: linear-gradient(135deg, #1a2744 0%, #0a1628 100%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+  }
+  .logo-4 .letters {
+    font-family: 'Gill Sans', 'Trebuchet MS', 'Helvetica Neue', sans-serif;
+    font-size: 110px;
+    font-weight: 200;
+    letter-spacing: 8px;
+    color: #fff;
+    padding-left: 8px;
+    line-height: 1;
+  }
+  .logo-4 .bar {
+    width: 80px;
+    height: 2px;
+    background: #c4a050;
+    margin-top: 8px;
+  }
+
+  .label {
+    text-align: center;
+    margin-top: 10px;
+    font-family: sans-serif;
+    font-size: 12px;
+    color: #666;
+    letter-spacing: 1px;
+  }
+
+  .card {
+    display: flex;
+    flex-direction: column;
+  }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <div class="logo-1">
+    <div class="letters">F<span>B</span></div>
+  </div>
+  <div class="label">1 — Monogramma navy/oro</div>
+</div>
+
+<div class="card">
+  <div class="logo-2">
+    <div class="letters">FB</div>
+    <div class="line"></div>
+    <div class="tagline">Consulente Finanziario</div>
+  </div>
+  <div class="label">2 — Minimalista con tagline</div>
+</div>
+
+<div class="card">
+  <div class="logo-3">
+    <div class="circle">
+      <div class="letters">FB</div>
+    </div>
+  </div>
+  <div class="label">3 — Cerchio classico</div>
+</div>
+
+<div class="card">
+  <div class="logo-4">
+    <div class="letters">FB</div>
+    <div class="bar"></div>
+  </div>
+  <div class="label">4 — Gradient navy + barra oro</div>
+</div>
+
+</body>
+</html>
