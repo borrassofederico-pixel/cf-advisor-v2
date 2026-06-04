@@ -14,7 +14,7 @@ from pathlib import Path
 from generate_carousel import save_slide_jpegs
 
 POLL_TIMEOUT = int(os.environ.get("TELEGRAM_POLL_MINUTES", "30")) * 60
-LI_VERSION = "202501"
+LI_VERSION = "202404"
 LI_HEADERS_BASE = {
     "Content-Type": "application/json",
     "LinkedIn-Version": LI_VERSION,
@@ -52,7 +52,6 @@ def upload_image_to_linkedin(image_path: str, access_token: str, person_id: str)
     """Carica una singola immagine su LinkedIn e restituisce l'URN."""
     headers = {**LI_HEADERS_BASE, "Authorization": f"Bearer {access_token}"}
 
-    # 1. Inizializza upload
     resp = requests.post(
         "https://api.linkedin.com/rest/images?action=initializeUpload",
         headers=headers,
@@ -65,7 +64,6 @@ def upload_image_to_linkedin(image_path: str, access_token: str, person_id: str)
     upload_url = data["value"]["uploadUrl"]
     image_urn = data["value"]["image"]
 
-    # 2. Carica i byte dell'immagine
     with open(image_path, "rb") as f:
         img_bytes = f.read()
     resp = requests.put(
@@ -86,17 +84,9 @@ def publish_image_post(caption: str, image_urns: list[str],
     headers = {**LI_HEADERS_BASE, "Authorization": f"Bearer {access_token}"}
 
     if len(image_urns) == 1:
-        content = {
-            "media": {
-                "id": image_urns[0],
-            }
-        }
+        content = {"media": {"id": image_urns[0]}}
     else:
-        content = {
-            "multiImage": {
-                "images": [{"id": urn} for urn in image_urns],
-            }
-        }
+        content = {"multiImage": {"images": [{"id": urn} for urn in image_urns]}}
 
     resp = requests.post(
         "https://api.linkedin.com/rest/posts",
@@ -133,19 +123,16 @@ def publish_to_linkedin(pending: dict) -> bool:
     content["topic"] = pending.get("topic", "Finanza personale")
 
     try:
-        # Genera le slide JPEG (1080x1080)
         print("[telegram_bot] Generazione slide immagini...")
         slide_paths = save_slide_jpegs(content, out_dir="automation/publish_slides")
         print(f"[telegram_bot] {len(slide_paths)} slide generate")
 
-        # Carica ogni slide su LinkedIn
         image_urns = []
         for i, path in enumerate(slide_paths):
             print(f"[telegram_bot] Upload slide {i+1}/{len(slide_paths)}...")
             urn = upload_image_to_linkedin(path, access_token, person_id)
             image_urns.append(urn)
 
-        # Pulizia file locali
         for p in slide_paths:
             Path(p).unlink(missing_ok=True)
         publish_dir = Path("automation/publish_slides")
@@ -155,7 +142,6 @@ def publish_to_linkedin(pending: dict) -> bool:
             except OSError:
                 pass
 
-        # Pubblica il post con tutte le immagini
         print(f"[telegram_bot] Pubblicazione post con {len(image_urns)} immagini...")
         post_id = publish_image_post(
             caption=content["caption"],
