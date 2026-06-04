@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #cacaca;
+    display: flex;
+    gap: 56px;
+    padding: 64px;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: center;
+    min-height: 100vh;
+  }
+  .card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+  }
+  .label {
+    font-family: 'Helvetica Neue', Helvetica, sans-serif;
+    font-size: 10px;
+    letter-spacing: 3px;
+    color: #333;
+    text-transform: uppercase;
+    text-align: center;
+    max-width: 280px;
+    line-height: 1.6;
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════
+  CONCEPT 1 — IL GLIFO UNIFICATO
+  Le stesse 3 linee orizzontali servono sia F che B.
+  Lette da sinistra: vedi una F.
+  Lette da destra: vedi una B.
+  Un solo segno, due lettere.
+
+  Geometria a griglia perfetta:
+  Stem:      x 138–162  (24px)
+  H totale:  y 68–232   (164px)
+  Barre:     top y=68,  mid y=150  (sezione aurea ≈ 0.618)
+  Lobi B:    r=41px ciascuno (h=82px per lobe)
+  Barre F:   estensione sinistra 72px
+══════════════════════════════════════════════════════════ -->
+<div class="card">
+<svg width="300" height="300" viewBox="0 0 300 300" xmlns="http://www.w3.org/2000/svg">
+  <rect width="300" height="300" fill="#0c1a2e"/>
+
+  <!-- GLIFO: le barre orizzontali sono le stesse per F e B -->
+
+  <!-- lobe superiore B: semicerchio da y=68 a y=150, r=41 -->
+  <path d="M150,68 A41,41 0 0,1 150,150"
+        fill="none" stroke="#c4a050" stroke-width="22" stroke-linecap="butt"/>
+
+  <!-- lobe inferiore B: semicerchio da y=150 a y=232, r=41 -->
+  <path d="M150,150 A41,41 0 0,1 150,232"
+        fill="none" stroke="#c4a050" stroke-width="22" stroke-linecap="butt"/>
+
+  <!-- stem verticale (copre e unifica) -->
+  <rect x="138" y="68" width="24" height="164" fill="white"/>
+
+  <!-- barra top: va sia a sinistra (F) che è il bordo top dei lobi B -->
+  <rect x="66" y="68" width="72" height="22" fill="white"/>
+
+  <!-- barra mid: va a sinistra (F) ed è la divisione tra i due lobi B -->
+  <rect x="66" y="139" width="72" height="22" fill="white"/>
+
+  <!-- la barra mid va anche a destra come linea di divisione dei lobi -->
+  <rect x="162" y="148" width="46" height="5" fill="#0c1a2e"/>
+
+  <!-- punto di tangenza: piccolo tocco oro sullo stem al punto medio -->
+  <rect x="138" y="147" width="24" height="7" fill="#c4a050"/>
+</svg>
+<div class="label">I — Il glifo unificato<br>stesse linee, due lettere</div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════
+  CONCEPT 2 — LA LIGATURA
+  F e B sono scritte come in un monogramma calligrafico.
+  La gamba destra della F scende e diventa il montante della B
+  attraverso una curva fluida. Un segno continuo, ininterrotto.
+  Stile luxury brand (Cartier / LV energy).
+══════════════════════════════════════════════════════════ -->
+<div class="card">
+<svg width="300" height="300" viewBox="0 0 300 300" xmlns="http://www.w3.org/2000/svg">
+  <rect width="300" height="300" fill="#0c1a2e"/>
+  <!-- cornice oro doppia -->
+  <rect x="12" y="12" width="276" height="276" fill="none" stroke="#c4a050" stroke-width="0.6"/>
+  <rect x="18" y="18" width="264" height="264" fill="none" stroke="#c4a050" stroke-width="0.3"/>
+
+  <!--
+    Disegno la ligatura come path unico:
+    - F: montante sx, barra top, barra media
+    - curva di raccordo
+    - B: montante (condiviso), lobe sup, lobe inf
+    Tutto come stroke, linee sottili eleganti
+  -->
+
+  <!-- barra top F -->
+  <line x1="68" y1="82" x2="148" y2="82" stroke="white" stroke-width="7" stroke-linecap="square"/>
+
+  <!-- montante F / raccordo / montante B: un path verticale continuo -->
+  <line x1="82" y1="82" x2="82" y2="218" stroke="white" stroke-width="7" stroke-linecap="square"/>
+
+  <!-- barra media F -->
+  <line x1="82" y1="150" x2="140" y2="150" stroke="white" stroke-width="7" stroke-linecap="square"/>
+
+  <!-- RACCORDO: la fine della barra media F si incurva verso la B -->
+  <!-- linea di connessione orizzontale sottile tra le due lettere -->
+  <path d="M148,82 Q172,82 172,104" fill="none" stroke="#c4a050" stroke-width="5" stroke-linecap="round"/>
+
+  <!-- montante B (x=172) -->
+  <line x1="172" y1="82" x2="172" y2="218" stroke="white" stroke-width="7" stroke-linecap="square"/>
+
+  <!-- lobe superiore B: arco da (172,82) a (172,150) -->
+  <path d="M172,82 Q230,82 230,116 Q230,150 172,150"
+        fill="none" stroke="#c4a050" stroke-width="7" stroke-linecap="round"/>
+
+  <!-- lobe inferiore B (leggermente più grande): da (172,150) a (172,218) -->
+  <path d="M172,150 Q238,150 238,184 Q238,218 172,218"
+        fill="none" stroke="#c4a050" stroke-width="7" stroke-linecap="round"/>
+
+  <!-- barra base B (serif) -->
+  <line x1="158" y1="218" x2="186" y2="218" stroke="white" stroke-width="5" stroke-linecap="square"/>
+  <!-- barra base F (serif) -->
+  <line x1="68" y1="218" x2="96" y2="218" stroke="white" stroke-width="5" stroke-linecap="square"/>
+  <!-- barra base top F (serif) -->
+  <line x1="68" y1="82" x2="96" y2="82" stroke="white" stroke-width="5" stroke-linecap="square"/>
+
+</svg>
+<div class="label">II — La ligatura<br>segno continuo, stile luxury</div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════
+  CONCEPT 3 — LO SCUDO
+  La forma esterna è uno scudo araldico stilizzato.
+  All'interno, F e B condividono il montante verticale centrale.
+  Stile stemma / sigillo professionale.
+  Oro su navy.
+══════════════════════════════════════════════════════════ -->
+<div class="card">
+<svg width="300" height="300" viewBox="0 0 300 300" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <clipPath id="shield">
+      <!-- forma scudo: rettangolo superiore + punta inferiore -->
+      <path d="M60,48 L240,48 L240,196 Q150,260 150,260 Q150,260 60,196 Z"/>
+    </clipPath>
+  </defs>
+
+  <rect width="300" height="300" fill="#f2f0eb"/>
+
+  <!-- scudo navy -->
+  <path d="M60,48 L240,48 L240,196 Q150,260 150,260 Q150,260 60,196 Z" fill="#0c1a2e"/>
+  <!-- bordo oro -->
+  <path d="M60,48 L240,48 L240,196 Q150,260 150,260 Q150,260 60,196 Z"
+        fill="none" stroke="#c4a050" stroke-width="3"/>
+
+  <g clip-path="url(#shield)">
+
+    <!-- lobe sup B (oro) -->
+    <path d="M150,74 L164,74 A44,44 0 0,1 164,162 L150,162 Z" fill="#c4a050"/>
+    <!-- lobe inf B (oro leggermente più caldo) -->
+    <path d="M150,155 L164,155 A36,36 0 0,1 164,227 L150,227 Z" fill="#b8923e"/>
+
+    <!-- montante condiviso bianco -->
+    <rect x="130" y="74" width="20" height="158" fill="white"/>
+
+    <!-- barra top F -->
+    <rect x="72" y="74" width="58" height="18" fill="white"/>
+    <!-- barra media F -->
+    <rect x="72" y="143" width="58" height="16" fill="white"/>
+
+  </g>
+
+  <!-- linea separatrice oro orizzontale sullo scudo -->
+  <line x1="60" y1="168" x2="240" y2="168" stroke="#c4a050" stroke-width="0.8" opacity="0.4"/>
+
+</svg>
+<div class="label">III — Lo scudo<br>sigillo professionale</div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════
+  CONCEPT 4 — IL SIGILLO CIRCOLARE
+  Cerchio esterno con testo "FEDERICO BORASSO · CF ·"
+  Al centro, il monogramma ridotto a pura icona geometrica:
+  F specchiata + B = forma quasi simmetrica e astratta.
+  Come un timbro notarile o sigillo bancario.
+══════════════════════════════════════════════════════════ -->
+<div class="card">
+<svg width="300" height="300" viewBox="0 0 300 300" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <clipPath id="seal">
+      <circle cx="150" cy="150" r="110"/>
+    </clipPath>
+    <path id="textCircle" d="M150,150 m-90,0 a90,90 0 1,1 180,0 a90,90 0 1,1 -180,0"/>
+  </defs>
+
+  <rect width="300" height="300" fill="#f2f0eb"/>
+
+  <!-- cerchio esterno navy -->
+  <circle cx="150" cy="150" r="126" fill="#0c1a2e"/>
+  <circle cx="150" cy="150" r="126" fill="none" stroke="#c4a050" stroke-width="1.5"/>
+
+  <!-- anello testo -->
+  <circle cx="150" cy="150" r="108" fill="none" stroke="#c4a050" stroke-width="0.5" opacity="0.6"/>
+
+  <!-- testo circolare -->
+  <text font-family="'Gill Sans','Optima','Helvetica Neue',sans-serif"
+        font-size="9.5"
+        font-weight="300"
+        letter-spacing="4.2"
+        fill="#c4a050">
+    <textPath href="#textCircle" startOffset="4%">
+      FEDERICO  BORASSO  ·  CONSULENTE  FINANZIARIO  ·
+    </textPath>
+  </text>
+
+  <!-- area interna navy più scura -->
+  <circle cx="150" cy="150" r="84" fill="#080f1c"/>
+  <circle cx="150" cy="150" r="84" fill="none" stroke="#c4a050" stroke-width="0.8" opacity="0.5"/>
+
+  <g clip-path="url(#seal)">
+    <!-- lobe sup B (oro) — centrato nel cerchio interno -->
+    <path d="M150,90 L162,90 A36,36 0 0,1 162,162 L150,162 Z" fill="#c4a050"/>
+    <!-- lobe inf B -->
+    <path d="M150,155 L162,155 A33,33 0 0,1 162,221 L150,221 Z" fill="#b8923e"/>
+
+    <!-- montante bianco -->
+    <rect x="132" y="90" width="18" height="131" fill="white"/>
+
+    <!-- barra top F -->
+    <rect x="72" y="90" width="60" height="16" fill="white"/>
+    <!-- barra media F -->
+    <rect x="72" y="147" width="60" height="14" fill="white"/>
+  </g>
+
+</svg>
+<div class="label">IV — Il sigillo<br>testo circolare + monogramma</div>
+</div>
+
+</body>
+</html>
