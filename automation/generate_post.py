@@ -51,6 +51,9 @@ Regole:
 
 
 def pick_topic() -> str:
+    override = os.environ.get("TOPIC_OVERRIDE", "").strip()
+    if override:
+        return override
     day_of_year = datetime.now().timetuple().tm_yday
     return TOPICS[day_of_year % len(TOPICS)]
 

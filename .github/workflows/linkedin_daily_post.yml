@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: "30 7 * * 1-5"   # Lunedì–Venerdì 08:30 ora italiana (estate)
   workflow_dispatch:
+    inputs:
+      topic:
+        description: "Tema del post (lascia vuoto per automatico)"
+        required: false
+        default: ""
 
 jobs:
   generate-and-approve:
@@ -31,6 +36,7 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TOPIC_OVERRIDE: ${{ github.event.inputs.topic }}
         run: python automation/generate_post.py
 
       - name: Attendi approvazione e pubblica (30 min)
