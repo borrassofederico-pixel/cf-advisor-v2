@@ -47,3 +47,12 @@ jobs:
           LINKEDIN_PERSON_ID: ${{ secrets.LINKEDIN_PERSON_ID }}
           TELEGRAM_POLL_MINUTES: "30"
         run: python automation/telegram_bot.py
+
+      - name: Salva storico post nel repository
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add automation/post_history.json 2>/dev/null || true
+          git diff --staged --quiet || git commit -m "chore: aggiorna storico post [skip ci]"
+          git push origin HEAD:main || true

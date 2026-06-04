@@ -248,7 +248,7 @@ def html_cta(author_name: str) -> str:
       <div class="avatar-inner">{initials}</div>
     </div>
     <div class="name">{author_name}</div>
-    <div class="role">Consulente Finanziario Indipendente</div>
+    <div class="role">Consulente Finanziario</div>
     <div class="divider"></div>
     <div class="cta-title">Ti è stato utile?</div>
     <div class="actions">
