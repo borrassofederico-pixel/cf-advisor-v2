@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #d8d8d8;
+    display: flex;
+    gap: 48px;
+    padding: 60px;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: center;
+  }
+  .card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+  }
+  .label {
+    font-family: 'Helvetica Neue', sans-serif;
+    font-size: 11px;
+    letter-spacing: 2px;
+    color: #444;
+    text-transform: uppercase;
+  }
+</style>
+</head>
+<body>
+
+<!--
+  CONCEPT: F e B condividono UN solo montante verticale.
+  La F si apre a sinistra con le sue barre.
+  La B si apre a destra con due semicerchi perfetti.
+  Il montante è il punto di equilibrio tra le due lettere.
+
+  Varianti: 4 trattamenti cromatici dello stesso monogramma.
+-->
+
+<!-- ── GEOMETRIA BASE (riusata in tutte le varianti) ──────────────
+  Canvas 300×300. Centro 150,150.
+  Montante: x=136..164 (28px largo), y=62..238 (176px alto)
+  F — barre a sinistra del montante:
+    Top:    x=62..136,  y=62..84   (h=22)
+    Media:  x=62..136,  y=139..157 (h=18)
+  B — semicerchi a destra del montante:
+    Lobe sup: centro (164, 112), r=50  → da y=62 a y=162
+    Lobe inf: centro (164, 188), r=50  → da y=138 a y=238
+    (i due lobi si toccano a y=150, punto d'oro del rettangolo)
+──────────────────────────────────────────────────────────────── -->
+
+<!-- VARIANTE 1: navy scuro, montante bianco, F bianca, B oro -->
+<div class="card">
+<svg width="300" height="300" viewBox="0 0 300 300" xmlns="http://www.w3.org/2000/svg">
+  <rect width="300" height="300" fill="#0b1929"/>
+  <!-- cornice oro -->
+  <rect x="14" y="14" width="272" height="272" fill="none" stroke="#c4a050" stroke-width="0.8" opacity="0.6"/>
+
+  <!-- lobe superiore B (oro) -->
+  <path d="M150,62 L164,62 A50,50 0 0,1 164,162 L150,162 Z" fill="#c4a050"/>
+  <!-- lobe inferiore B (oro più scuro) -->
+  <path d="M150,138 L164,138 A50,50 0 0,1 164,238 L150,238 Z" fill="#b8923e"/>
+
+  <!-- montante condiviso (bianco sopra tutto) -->
+  <rect x="122" y="62" width="28" height="176" fill="#ffffff"/>
+
+  <!-- barra top F (bianca) -->
+  <rect x="62" y="62" width="60" height="22" fill="#ffffff"/>
+  <!-- barra media F (bianca) -->
+  <rect x="62" y="139" width="60" height="18" fill="#ffffff"/>
+
+  <!-- tacca sottile oro al punto di mezzo (sezione aurea visiva) -->
+  <rect x="122" y="148" width="28" height="2" fill="#c4a050" opacity="0.8"/>
+</svg>
+<div class="label">1 — navy / bianco / oro</div>
+</div>
+
+
+<!-- VARIANTE 2: bianco, montante navy, F navy, B oro — versione "chiara" -->
+<div class="card">
+<svg width="300" height="300" viewBox="0 0 300 300" xmlns="http://www.w3.org/2000/svg">
+  <rect width="300" height="300" fill="#ffffff"/>
+  <rect x="1" y="1" width="298" height="298" fill="none" stroke="#e0e0e0" stroke-width="1"/>
+
+  <!-- lobe superiore B (oro) -->
+  <path d="M150,62 L164,62 A50,50 0 0,1 164,162 L150,162 Z" fill="#c4a050"/>
+  <!-- lobe inferiore B (oro più caldo) -->
+  <path d="M150,138 L164,138 A50,50 0 0,1 164,238 L150,238 Z" fill="#a07830"/>
+
+  <!-- montante condiviso (navy) -->
+  <rect x="122" y="62" width="28" height="176" fill="#0b1929"/>
+
+  <!-- barra top F (navy) -->
+  <rect x="62" y="62" width="60" height="22" fill="#0b1929"/>
+  <!-- barra media F (navy) -->
+  <rect x="62" y="139" width="60" height="18" fill="#0b1929"/>
+</svg>
+<div class="label">2 — bianco / navy / oro</div>
+</div>
+
+
+<!-- VARIANTE 3: navy, tutto oro — versione monocromatica oro su scuro -->
+<div class="card">
+<svg width="300" height="300" viewBox="0 0 300 300" xmlns="http://www.w3.org/2000/svg">
+  <rect width="300" height="300" fill="#0b1929"/>
+
+  <!-- lobe superiore B -->
+  <path d="M150,62 L164,62 A50,50 0 0,1 164,162 L150,162 Z" fill="#c4a050"/>
+  <!-- lobe inferiore B -->
+  <path d="M150,138 L164,138 A50,50 0 0,1 164,238 L150,238 Z" fill="#c4a050"/>
+
+  <!-- montante condiviso (oro) -->
+  <rect x="122" y="62" width="28" height="176" fill="#c4a050"/>
+
+  <!-- barra top F (oro) -->
+  <rect x="62" y="62" width="60" height="22" fill="#c4a050"/>
+  <!-- barra media F (oro) -->
+  <rect x="62" y="139" width="60" height="18" fill="#c4a050"/>
+
+  <!-- spazio negativo navy tra i lobi per definire meglio la B -->
+  <rect x="164" y="158" width="52" height="8" fill="#0b1929"/>
+</svg>
+<div class="label">3 — navy / tutto oro</div>
+</div>
+
+
+<!-- VARIANTE 4: cerchio navy (richiamo var.3 di prima), stesso monogramma inside -->
+<div class="card">
+<svg width="300" height="300" viewBox="0 0 300 300" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <clipPath id="circ4">
+      <circle cx="150" cy="150" r="122"/>
+    </clipPath>
+  </defs>
+
+  <rect width="300" height="300" fill="#f4f4f4"/>
+  <circle cx="150" cy="150" r="122" fill="#0b1929"/>
+  <circle cx="150" cy="150" r="122" fill="none" stroke="#c4a050" stroke-width="2.5"/>
+
+  <g clip-path="url(#circ4)">
+    <!-- lobe superiore B (oro) -->
+    <path d="M150,62 L164,62 A50,50 0 0,1 164,162 L150,162 Z" fill="#c4a050"/>
+    <!-- lobe inferiore B (oro) -->
+    <path d="M150,138 L164,138 A50,50 0 0,1 164,238 L150,238 Z" fill="#b8923e"/>
+
+    <!-- montante condiviso (bianco) -->
+    <rect x="122" y="62" width="28" height="176" fill="#ffffff"/>
+
+    <!-- barra top F (bianca) -->
+    <rect x="62" y="62" width="60" height="22" fill="#ffffff"/>
+    <!-- barra media F (bianca) -->
+    <rect x="62" y="139" width="60" height="18" fill="#ffffff"/>
+
+    <!-- linea oro di separazione lobi -->
+    <rect x="164" y="158" width="52" height="4" fill="#0b1929"/>
+  </g>
+</svg>
+<div class="label">4 — cerchio navy</div>
+</div>
+
+</body>
+</html>
