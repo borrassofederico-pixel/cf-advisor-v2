@@ -128,13 +128,13 @@ def publish_ugc_post(caption: str, asset_urns: list[str],
     return resp.json().get("id", "unknown")
 
 
-def publish_to_linkedin(pending: dict) -> bool:
+def publish_to_linkedin(pending: dict) -> str | None:
     access_token = os.environ.get("LINKEDIN_ACCESS_TOKEN", "")
     person_id = os.environ.get("LINKEDIN_PERSON_ID", "")
 
     if not all([access_token, person_id]):
         print("[telegram_bot] Credenziali LinkedIn mancanti")
-        return False
+        return None
 
     content = pending["content"]
     content["topic"] = pending.get("topic", "Finanza personale")
@@ -168,11 +168,11 @@ def publish_to_linkedin(pending: dict) -> bool:
             person_id=person_id,
         )
         print(f"[telegram_bot] Post pubblicato! ID: {post_id}")
-        return True
+        return post_id
 
     except Exception as e:
         print(f"[telegram_bot] Errore pubblicazione: {e}")
-        return False
+        return None
 
 
 def load_pending() -> dict | None:
@@ -181,6 +181,24 @@ def load_pending() -> dict | None:
         return None
     with open(path) as f:
         return json.load(f)
+
+
+def _save_to_history(pending: dict, post_id: str = "", error: str = "", status: str = "published") -> None:
+    from datetime import datetime, timezone
+    history_path = Path("automation/post_history.json")
+    history = json.loads(history_path.read_text()) if history_path.exists() else []
+    content = pending.get("content", {})
+    entry = {
+        "date": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+        "status": status,
+        "topic": pending.get("topic", ""),
+        "title": content.get("title", ""),
+        "caption": content.get("caption", ""),
+        "linkedin_post_id": post_id,
+        "error": error,
+    }
+    history.append(entry)
+    history_path.write_text(json.dumps(history, ensure_ascii=False, indent=2))
 
 
 def main():
@@ -216,12 +234,16 @@ def main():
                 answer_callback(bot_token, cb["id"], "⏳ Carico le slide su LinkedIn...")
                 send_message(bot_token, chat_id, "🎨 Carico le slide e pubblico su LinkedIn...")
                 pending = load_pending()
-                if pending and publish_to_linkedin(pending):
+                post_id = publish_to_linkedin(pending) if pending else None
+                if post_id:
                     send_message(bot_token, chat_id,
                         f"✅ *Post pubblicato su LinkedIn!*\n\n_{pending['topic']}_")
+                    _save_to_history(pending, post_id=post_id, status="published")
                 else:
                     send_message(bot_token, chat_id,
                         "❌ Errore pubblicazione. Controlla i log su GitHub Actions.")
+                    if pending:
+                        _save_to_history(pending, error="publish_failed", status="error")
                 handled = True
 
             elif data == "regenerate":
@@ -238,12 +260,18 @@ def main():
             elif data == "skip":
                 answer_callback(bot_token, cb["id"], "⏭️ Saltato.")
                 send_message(bot_token, chat_id, "⏭️ *Post saltato.* A domani!")
+                pending = load_pending()
+                if pending:
+                    _save_to_history(pending, status="skipped")
                 handled = True
 
     if not handled:
         send_message(bot_token, chat_id,
             "⏰ Nessuna risposta in 30 minuti. Post non pubblicato.")
         print("[telegram_bot] Timeout.")
+        pending = load_pending()
+        if pending:
+            _save_to_history(pending, status="timeout")
 
 
 if __name__ == "__main__":
