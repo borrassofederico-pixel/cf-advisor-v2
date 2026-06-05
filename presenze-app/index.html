@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Gestione Presenze</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <!-- EmailJS SDK per notifiche email all'admin -->
+  <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
   <script type="module">
     // ======================================================
     // CONFIGURAZIONE FIREBASE
@@ -27,6 +29,22 @@
       messagingSenderId: "SOSTITUISCI",
       appId: "SOSTITUISCI"
     };
+
+    // ======================================================
+    // CONFIGURAZIONE EMAILJS
+    // Vai su https://www.emailjs.com → crea account gratuito
+    // Segui la guida SETUP.md per ottenere questi valori
+    // ======================================================
+    const EMAILJS_PUBLIC_KEY  = "SOSTITUISCI_PUBLIC_KEY";
+    const EMAILJS_SERVICE_ID  = "SOSTITUISCI_SERVICE_ID";
+    const EMAILJS_TEMPLATE_ID = "SOSTITUISCI_TEMPLATE_ID";
+    const ADMIN_EMAIL         = "SOSTITUISCI_EMAIL_ADMIN";  // es. "tuo@gmail.com"
+
+    // ======================================================
+    // CONFIGURAZIONE BACKUP
+    // ======================================================
+    const BACKUP_INTERVAL_DAYS = 7;
+    const BACKUP_KEY = "presenze_last_backup";
 
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
