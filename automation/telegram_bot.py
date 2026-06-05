@@ -14,8 +14,10 @@ from pathlib import Path
 from generate_carousel import save_slide_jpegs
 
 POLL_TIMEOUT = int(os.environ.get("TELEGRAM_POLL_MINUTES", "30")) * 60
-LI_V2_HEADERS = {
+LI_REST_VERSION = "202308"
+LI_REST_HEADERS = {
     "Content-Type": "application/json",
+    "LinkedIn-Version": LI_REST_VERSION,
     "X-Restli-Protocol-Version": "2.0.0",
 }
 
@@ -46,32 +48,34 @@ def send_message(bot_token: str, chat_id: str, text: str) -> None:
     )
 
 
-def register_image(access_token: str, member_id: str) -> tuple[str, str]:
-    """Registra un asset immagine su LinkedIn (v2). Restituisce (upload_url, asset_urn)."""
-    headers = {**LI_V2_HEADERS, "Authorization": f"Bearer {access_token}"}
+def get_person_urn(access_token: str) -> str:
+    """Recupera urn:li:person:SUB dal token via /v2/userinfo (scope openid+profile)."""
+    resp = requests.get(
+        "https://api.linkedin.com/v2/userinfo",
+        headers={"Authorization": f"Bearer {access_token}"},
+        timeout=10,
+    )
+    if resp.ok:
+        sub = resp.json().get("sub", "")
+        if sub:
+            print(f"[telegram_bot] Person sub: {sub}")
+            return f"urn:li:person:{sub}"
+    raise RuntimeError(f"Impossibile ottenere person sub da userinfo: {resp.status_code} {resp.text}")
+
+
+def init_image_upload(access_token: str, person_urn: str) -> tuple[str, str]:
+    """REST API: inizializza upload immagine. Restituisce (upload_url, image_urn)."""
+    headers = {**LI_REST_HEADERS, "Authorization": f"Bearer {access_token}"}
     resp = requests.post(
-        "https://api.linkedin.com/v2/assets?action=registerUpload",
+        "https://api.linkedin.com/rest/images?action=initializeUpload",
         headers=headers,
-        json={
-            "registerUploadRequest": {
-                "recipes": ["urn:li:digitalmediaRecipe:feedshare-image"],
-                "owner": f"urn:li:member:{member_id}",
-                "serviceRelationships": [{
-                    "relationshipType": "OWNER",
-                    "identifier": "urn:li:userGeneratedContent",
-                }],
-            }
-        },
+        json={"initializeUploadRequest": {"owner": person_urn}},
         timeout=15,
     )
     if not resp.ok:
-        raise RuntimeError(f"LinkedIn registerUpload error {resp.status_code}: {resp.text}")
-    data = resp.json()
-    upload_url = data["value"]["uploadMechanism"][
-        "com.linkedin.digitalmedia.uploading.MediaUploadHttpRequest"
-    ]["uploadUrl"]
-    asset_urn = data["value"]["asset"]
-    return upload_url, asset_urn
+        raise RuntimeError(f"LinkedIn initializeUpload error {resp.status_code}: {resp.text}")
+    data = resp.json()["value"]
+    return data["uploadUrl"], data["image"]
 
 
 def upload_image(upload_url: str, image_path: str, access_token: str) -> None:
@@ -91,67 +95,35 @@ def upload_image(upload_url: str, image_path: str, access_token: str) -> None:
         raise RuntimeError(f"LinkedIn image upload error {resp.status_code}: {resp.text}")
 
 
-def get_member_id(access_token: str) -> str:
-    """Recupera il member ID reale dal token via /v2/userinfo (scope openid+profile)."""
-    resp = requests.get(
-        "https://api.linkedin.com/v2/userinfo",
-        headers={"Authorization": f"Bearer {access_token}"},
-        timeout=10,
-    )
-    if resp.ok:
-        sub = resp.json().get("sub", "")
-        if sub:
-            print(f"[telegram_bot] Member ID da userinfo: {sub}")
-            return sub
-    # fallback: prova /v2/me
-    resp2 = requests.get(
-        "https://api.linkedin.com/v2/me",
-        headers={**LI_V2_HEADERS, "Authorization": f"Bearer {access_token}"},
-        timeout=10,
-    )
-    if resp2.ok:
-        mid = resp2.json().get("id", "")
-        if mid:
-            print(f"[telegram_bot] Member ID da /v2/me: {mid}")
-            return mid
-    raise RuntimeError(f"Impossibile ottenere member ID. userinfo={resp.status_code} me={resp2.status_code}")
-
-
-def publish_ugc_post(caption: str, asset_urns: list[str],
-                     access_token: str, member_id: str) -> str:
-    """Pubblica un ugcPost LinkedIn con una o più immagini (v2 API)."""
-    headers = {**LI_V2_HEADERS, "Authorization": f"Bearer {access_token}"}
-    media = [
-        {
-            "status": "READY",
-            "description": {"text": ""},
-            "media": urn,
-            "title": {"text": ""},
-        }
-        for urn in asset_urns
-    ]
+def publish_post(caption: str, image_urns: list[str],
+                 access_token: str, person_urn: str) -> str:
+    """REST API: pubblica un post LinkedIn multi-immagine."""
+    headers = {**LI_REST_HEADERS, "Authorization": f"Bearer {access_token}"}
     resp = requests.post(
-        "https://api.linkedin.com/v2/ugcPosts",
+        "https://api.linkedin.com/rest/posts",
         headers=headers,
         json={
-            "author": f"urn:li:member:{member_id}",
-            "lifecycleState": "PUBLISHED",
-            "specificContent": {
-                "com.linkedin.ugc.ShareContent": {
-                    "shareCommentary": {"text": caption},
-                    "shareMediaCategory": "IMAGE",
-                    "media": media,
+            "author": person_urn,
+            "commentary": caption,
+            "visibility": "PUBLIC",
+            "distribution": {
+                "feedDistribution": "MAIN_FEED",
+                "targetEntities": [],
+                "thirdPartyDistributionChannels": [],
+            },
+            "content": {
+                "multiImage": {
+                    "images": [{"id": urn, "altText": ""} for urn in image_urns]
                 }
             },
-            "visibility": {
-                "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"
-            },
+            "lifecycleState": "PUBLISHED",
+            "isReshareDisabledByAuthor": False,
         },
         timeout=20,
     )
     if not resp.ok:
-        raise RuntimeError(f"LinkedIn ugcPost error {resp.status_code}: {resp.text}")
-    return resp.json().get("id", "unknown")
+        raise RuntimeError(f"LinkedIn posts error {resp.status_code}: {resp.text}")
+    return resp.headers.get("x-restli-id", resp.json().get("id", "unknown"))
 
 
 def publish_to_linkedin(pending: dict) -> str | None:
@@ -165,17 +137,17 @@ def publish_to_linkedin(pending: dict) -> str | None:
     content["topic"] = pending.get("topic", "Finanza personale")
 
     try:
-        member_id = get_member_id(access_token)
+        person_urn = get_person_urn(access_token)
         print("[telegram_bot] Generazione slide immagini...")
         slide_paths = save_slide_jpegs(content, out_dir="automation/publish_slides", size=1080)
         print(f"[telegram_bot] {len(slide_paths)} slide generate")
 
-        asset_urns = []
+        image_urns = []
         for i, path in enumerate(slide_paths):
             print(f"[telegram_bot] Upload slide {i+1}/{len(slide_paths)}...")
-            upload_url, asset_urn = register_image(access_token, member_id)
+            upload_url, image_urn = init_image_upload(access_token, person_urn)
             upload_image(upload_url, path, access_token)
-            asset_urns.append(asset_urn)
+            image_urns.append(image_urn)
 
         for p in slide_paths:
             Path(p).unlink(missing_ok=True)
@@ -186,12 +158,12 @@ def publish_to_linkedin(pending: dict) -> str | None:
             except OSError:
                 pass
 
-        print(f"[telegram_bot] Pubblicazione post con {len(asset_urns)} immagini...")
-        post_id = publish_ugc_post(
+        print(f"[telegram_bot] Pubblicazione post con {len(image_urns)} immagini...")
+        post_id = publish_post(
             caption=content["caption"],
-            asset_urns=asset_urns,
+            image_urns=image_urns,
             access_token=access_token,
-            member_id=member_id,
+            person_urn=person_urn,
         )
         print(f"[telegram_bot] Post pubblicato! ID: {post_id}")
         return post_id
