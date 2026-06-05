@@ -48,29 +48,29 @@ def send_message(bot_token: str, chat_id: str, text: str) -> None:
     )
 
 
-def get_active_li_version(access_token: str) -> str:
-    """Trova la versione LinkedIn REST API più recente attiva (formato YYYYMM)."""
-    candidates = ["202501", "202412", "202411", "202410", "202409",
-                  "202408", "202407", "202406", "202405", "202404"]
+def get_active_li_version(access_token: str, person_urn: str) -> str:
+    """Trova la versione LinkedIn REST API attiva sondando initializeUpload direttamente."""
+    # Versioni reali LinkedIn (cadenza trimestrale/mensile)
+    candidates = ["202410", "202407", "202404", "202401",
+                  "202412", "202411", "202409", "202408",
+                  "202312", "202310", "202307", "202306"]
     for version in candidates:
-        resp = requests.get(
-            "https://api.linkedin.com/rest/posts",
+        resp = requests.post(
+            "https://api.linkedin.com/rest/images?action=initializeUpload",
             headers={
                 "Authorization": f"Bearer {access_token}",
                 "LinkedIn-Version": version,
-                "X-Restli-Protocol-Version": "2.0.0",
+                "Content-Type": "application/json",
             },
-            params={"author": "urn:li:person:test", "count": 0},
+            json={"initializeUploadRequest": {"owner": person_urn}},
             timeout=5,
         )
-        # 426 = versione non attiva, 400 INVALID_VERSION = formato sbagliato, altri = versione ok
-        if resp.status_code not in (426, 400):
-            print(f"[telegram_bot] Versione LinkedIn attiva: {version} (status {resp.status_code})")
-            return version
-        if resp.status_code == 400 and "INVALID_VERSION" not in resp.text:
-            print(f"[telegram_bot] Versione LinkedIn attiva: {version} (status {resp.status_code})")
-            return version
-        print(f"[telegram_bot] Versione {version} non attiva ({resp.status_code}), provo la prossima...")
+        print(f"[telegram_bot] Versione {version}: status {resp.status_code} - {resp.text[:80]}")
+        # 426 = versione non attiva, salta
+        if resp.status_code == 426:
+            continue
+        # qualsiasi altro status (200, 400, 403, 422...) = versione esiste
+        return version
     raise RuntimeError("Nessuna versione LinkedIn REST API attiva trovata")
 
 
@@ -173,8 +173,8 @@ def publish_to_linkedin(pending: dict) -> str | None:
     content["topic"] = pending.get("topic", "Finanza personale")
 
     try:
-        li_version = get_active_li_version(access_token)
         person_urn = get_person_urn(access_token)
+        li_version = get_active_li_version(access_token, person_urn)
         print("[telegram_bot] Generazione slide immagini...")
         slide_paths = save_slide_jpegs(content, out_dir="automation/publish_slides", size=1080)
         print(f"[telegram_bot] {len(slide_paths)} slide generate")
