@@ -48,6 +48,28 @@ def send_message(bot_token: str, chat_id: str, text: str) -> None:
     )
 
 
+def get_active_li_version(access_token: str) -> str:
+    """Trova la versione LinkedIn REST API più recente attiva."""
+    candidates = ["20250101", "20241201", "20241101", "20241001", "20240901",
+                  "20240801", "20240701", "20240601", "20240501", "20240401"]
+    for version in candidates:
+        resp = requests.get(
+            "https://api.linkedin.com/rest/posts",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "LinkedIn-Version": version,
+                "X-Restli-Protocol-Version": "2.0.0",
+            },
+            params={"author": "urn:li:person:test", "count": 0},
+            timeout=5,
+        )
+        # 426 = versione non valida, altri errori = versione OK ma parametri sbagliati
+        if resp.status_code != 426:
+            print(f"[telegram_bot] Versione LinkedIn attiva: {version} (status {resp.status_code})")
+            return version
+    raise RuntimeError("Nessuna versione LinkedIn REST API attiva trovata")
+
+
 def get_person_urn(access_token: str) -> str:
     """Recupera urn:li:person:SUB dal token via /v2/userinfo (scope openid+profile)."""
     resp = requests.get(
@@ -63,9 +85,14 @@ def get_person_urn(access_token: str) -> str:
     raise RuntimeError(f"Impossibile ottenere person sub da userinfo: {resp.status_code} {resp.text}")
 
 
-def init_image_upload(access_token: str, person_urn: str) -> tuple[str, str]:
+def init_image_upload(access_token: str, person_urn: str, version: str) -> tuple[str, str]:
     """REST API: inizializza upload immagine. Restituisce (upload_url, image_urn)."""
-    headers = {**LI_REST_HEADERS, "Authorization": f"Bearer {access_token}"}
+    headers = {
+        "Content-Type": "application/json",
+        "LinkedIn-Version": version,
+        "X-Restli-Protocol-Version": "2.0.0",
+        "Authorization": f"Bearer {access_token}",
+    }
     resp = requests.post(
         "https://api.linkedin.com/rest/images?action=initializeUpload",
         headers=headers,
@@ -96,9 +123,14 @@ def upload_image(upload_url: str, image_path: str, access_token: str) -> None:
 
 
 def publish_post(caption: str, image_urns: list[str],
-                 access_token: str, person_urn: str) -> str:
+                 access_token: str, person_urn: str, version: str) -> str:
     """REST API: pubblica un post LinkedIn multi-immagine."""
-    headers = {**LI_REST_HEADERS, "Authorization": f"Bearer {access_token}"}
+    headers = {
+        "Content-Type": "application/json",
+        "LinkedIn-Version": version,
+        "X-Restli-Protocol-Version": "2.0.0",
+        "Authorization": f"Bearer {access_token}",
+    }
     resp = requests.post(
         "https://api.linkedin.com/rest/posts",
         headers=headers,
@@ -137,6 +169,7 @@ def publish_to_linkedin(pending: dict) -> str | None:
     content["topic"] = pending.get("topic", "Finanza personale")
 
     try:
+        li_version = get_active_li_version(access_token)
         person_urn = get_person_urn(access_token)
         print("[telegram_bot] Generazione slide immagini...")
         slide_paths = save_slide_jpegs(content, out_dir="automation/publish_slides", size=1080)
@@ -145,7 +178,7 @@ def publish_to_linkedin(pending: dict) -> str | None:
         image_urns = []
         for i, path in enumerate(slide_paths):
             print(f"[telegram_bot] Upload slide {i+1}/{len(slide_paths)}...")
-            upload_url, image_urn = init_image_upload(access_token, person_urn)
+            upload_url, image_urn = init_image_upload(access_token, person_urn, li_version)
             upload_image(upload_url, path, access_token)
             image_urns.append(image_urn)
 
@@ -164,6 +197,7 @@ def publish_to_linkedin(pending: dict) -> str | None:
             image_urns=image_urns,
             access_token=access_token,
             person_urn=person_urn,
+            version=li_version,
         )
         print(f"[telegram_bot] Post pubblicato! ID: {post_id}")
         return post_id
