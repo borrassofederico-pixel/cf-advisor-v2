@@ -93,7 +93,8 @@ def upload_image(upload_url: str, image_path: str, access_token: str) -> None:
 
 def publish_ugc_post(caption: str, asset_urns: list[str],
                      access_token: str, person_id: str) -> str:
-    """Pubblica un ugcPost LinkedIn con una o più immagini (v2 API)."""
+    """Pubblica un ugcPost LinkedIn con una o più immagini (v2 API).
+    Prova urn:li:person: e, se restituisce 403 sull'author, ritenta con urn:li:member:."""
     headers = {**LI_V2_HEADERS, "Authorization": f"Bearer {access_token}"}
     media = [
         {
@@ -104,28 +105,37 @@ def publish_ugc_post(caption: str, asset_urns: list[str],
         }
         for urn in asset_urns
     ]
-    resp = requests.post(
-        "https://api.linkedin.com/v2/ugcPosts",
-        headers=headers,
-        json={
-            "author": f"urn:li:member:{person_id}",
-            "lifecycleState": "PUBLISHED",
-            "specificContent": {
-                "com.linkedin.ugc.ShareContent": {
-                    "shareCommentary": {"text": caption},
-                    "shareMediaCategory": "IMAGE",
-                    "media": media,
-                }
+
+    def _post(author_urn: str):
+        return requests.post(
+            "https://api.linkedin.com/v2/ugcPosts",
+            headers=headers,
+            json={
+                "author": author_urn,
+                "lifecycleState": "PUBLISHED",
+                "specificContent": {
+                    "com.linkedin.ugc.ShareContent": {
+                        "shareCommentary": {"text": caption},
+                        "shareMediaCategory": "IMAGE",
+                        "media": media,
+                    }
+                },
+                "visibility": {
+                    "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"
+                },
             },
-            "visibility": {
-                "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"
-            },
-        },
-        timeout=20,
-    )
-    if not resp.ok:
+            timeout=20,
+        )
+
+    for urn_type in ("person", "member"):
+        resp = _post(f"urn:li:{urn_type}:{person_id}")
+        if resp.ok:
+            return resp.json().get("id", "unknown")
+        if resp.status_code == 403 and "/author" in resp.text:
+            print(f"[telegram_bot] urn:li:{urn_type}: rifiutato, provo alternativa...")
+            continue
         raise RuntimeError(f"LinkedIn ugcPost error {resp.status_code}: {resp.text}")
-    return resp.json().get("id", "unknown")
+    raise RuntimeError(f"LinkedIn ugcPost: author URN non accettato per person_id={person_id}")
 
 
 def publish_to_linkedin(pending: dict) -> str | None:
