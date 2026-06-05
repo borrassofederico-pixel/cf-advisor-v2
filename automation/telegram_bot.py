@@ -49,9 +49,9 @@ def send_message(bot_token: str, chat_id: str, text: str) -> None:
 
 
 def get_active_li_version(access_token: str) -> str:
-    """Trova la versione LinkedIn REST API più recente attiva."""
-    candidates = ["20250101", "20241201", "20241101", "20241001", "20240901",
-                  "20240801", "20240701", "20240601", "20240501", "20240401"]
+    """Trova la versione LinkedIn REST API più recente attiva (formato YYYYMM)."""
+    candidates = ["202501", "202412", "202411", "202410", "202409",
+                  "202408", "202407", "202406", "202405", "202404"]
     for version in candidates:
         resp = requests.get(
             "https://api.linkedin.com/rest/posts",
@@ -63,10 +63,14 @@ def get_active_li_version(access_token: str) -> str:
             params={"author": "urn:li:person:test", "count": 0},
             timeout=5,
         )
-        # 426 = versione non valida, altri errori = versione OK ma parametri sbagliati
-        if resp.status_code != 426:
+        # 426 = versione non attiva, 400 INVALID_VERSION = formato sbagliato, altri = versione ok
+        if resp.status_code not in (426, 400):
             print(f"[telegram_bot] Versione LinkedIn attiva: {version} (status {resp.status_code})")
             return version
+        if resp.status_code == 400 and "INVALID_VERSION" not in resp.text:
+            print(f"[telegram_bot] Versione LinkedIn attiva: {version} (status {resp.status_code})")
+            return version
+        print(f"[telegram_bot] Versione {version} non attiva ({resp.status_code}), provo la prossima...")
     raise RuntimeError("Nessuna versione LinkedIn REST API attiva trovata")
 
 
