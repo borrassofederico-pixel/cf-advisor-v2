@@ -139,6 +139,7 @@ def send_to_telegram(content: dict, topic: str) -> dict:
     keyboard = {
         "inline_keyboard": [[
             {"text": "✅ Pubblica", "callback_data": "approve"},
+            {"text": "✏️ Modifica", "callback_data": "edit"},
             {"text": "🔄 Rigenera", "callback_data": "regenerate"},
             {"text": "❌ Salta oggi", "callback_data": "skip"},
         ]]

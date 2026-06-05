@@ -9,11 +9,12 @@ import json
 import time
 import requests
 import subprocess
+import anthropic
 from pathlib import Path
 
 from generate_carousel import save_slide_jpegs
 
-POLL_TIMEOUT = int(os.environ.get("TELEGRAM_POLL_MINUTES", "30")) * 60
+POLL_TIMEOUT = int(os.environ.get("TELEGRAM_POLL_MINUTES", "300")) * 60
 LI_V2_HEADERS = {
     "Content-Type": "application/json",
     "X-Restli-Protocol-Version": "2.0.0",
@@ -194,6 +195,71 @@ def publish_to_linkedin(pending: dict) -> str | None:
         return None
 
 
+def refine_content(existing: dict, feedback: str) -> dict:
+    """Chiama Claude per applicare le modifiche richieste al contenuto esistente."""
+    from generate_post import SYSTEM_PROMPT
+    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+    user_msg = (
+        f"Contenuto attuale:\n{json.dumps(existing, ensure_ascii=False, indent=2)}\n\n"
+        f"Modifica richiesta: {feedback}\n\n"
+        "Restituisci il JSON completo aggiornato con le modifiche applicate."
+    )
+    msg = client.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=800,
+        system=SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": user_msg}],
+    )
+    raw = msg.content[0].text.strip()
+    if raw.startswith("```"):
+        raw = raw.split("```")[1]
+        if raw.startswith("json"):
+            raw = raw[4:]
+    return json.loads(raw.strip())
+
+
+def send_preview_to_telegram(bot_token: str, chat_id: str, pending: dict) -> None:
+    """Ri-invia l'anteprima slide + bottoni di approvazione su Telegram."""
+    from generate_post import send_slides_to_telegram
+    content = pending["content"]
+    topic = pending.get("topic", "")
+
+    slide_paths = save_slide_jpegs(content, size=800)
+    album_caption = f"🎠 *{content['title']}*\n🏷️ _{topic}_"
+    send_slides_to_telegram(bot_token, chat_id, slide_paths, album_caption)
+    for p in slide_paths:
+        Path(p).unlink(missing_ok=True)
+    preview_dir = Path("automation/preview_slides")
+    if preview_dir.exists():
+        try:
+            preview_dir.rmdir()
+        except OSError:
+            pass
+
+    approval_text = (
+        f"📝 *Caption del post:*\n{content['caption']}\n\n"
+        f"Approvi la pubblicazione su LinkedIn?"
+    )
+    keyboard = {
+        "inline_keyboard": [[
+            {"text": "✅ Pubblica", "callback_data": "approve"},
+            {"text": "✏️ Modifica", "callback_data": "edit"},
+            {"text": "🔄 Rigenera", "callback_data": "regenerate"},
+            {"text": "❌ Salta oggi", "callback_data": "skip"},
+        ]]
+    }
+    requests.post(
+        f"https://api.telegram.org/bot{bot_token}/sendMessage",
+        json={
+            "chat_id": chat_id,
+            "text": approval_text,
+            "parse_mode": "Markdown",
+            "reply_markup": json.dumps(keyboard),
+        },
+        timeout=10,
+    )
+
+
 def load_pending() -> dict | None:
     path = "automation/pending_post.json"
     if not os.path.exists(path):
@@ -229,6 +295,7 @@ def main():
     offset = 0
     start_time = time.time()
     handled = False
+    waiting_for_edit = False
 
     while not handled and (time.time() - start_time) < POLL_TIMEOUT:
         try:
@@ -241,6 +308,28 @@ def main():
 
         for update in updates:
             offset = update["update_id"] + 1
+
+            # Gestione messaggio di testo (richiesta modifica)
+            if waiting_for_edit:
+                msg = update.get("message", {})
+                text = msg.get("text", "").strip()
+                if text and not text.startswith("/"):
+                    waiting_for_edit = False
+                    send_message(bot_token, chat_id, "✏️ Applico le modifiche, attendi...")
+                    pending = load_pending()
+                    if pending:
+                        try:
+                            updated = refine_content(pending["content"], text)
+                            updated["topic"] = pending.get("topic", "")
+                            pending["content"] = updated
+                            with open("automation/pending_post.json", "w") as f:
+                                json.dump(pending, f, ensure_ascii=False, indent=2)
+                            send_preview_to_telegram(bot_token, chat_id, pending)
+                        except Exception as e:
+                            print(f"[telegram_bot] Errore modifica: {e}")
+                            send_message(bot_token, chat_id, f"❌ Errore nella modifica: {e}")
+                    continue
+
             cb = update.get("callback_query")
             if not cb:
                 continue
@@ -265,6 +354,13 @@ def main():
                         _save_to_history(pending, error="publish_failed", status="error")
                 handled = True
 
+            elif data == "edit":
+                answer_callback(bot_token, cb["id"], "✏️ Scrivi le modifiche...")
+                send_message(bot_token, chat_id,
+                    "✍️ Scrivi qui cosa vuoi cambiare nel post\n"
+                    "_(es: \"rendi il tono più diretto\" o \"rimuovi il punto 3\")_")
+                waiting_for_edit = True
+
             elif data == "regenerate":
                 answer_callback(bot_token, cb["id"], "🔄 Rigenero...")
                 send_message(bot_token, chat_id, "🔄 Rigenerazione in corso, attendi...")
@@ -286,7 +382,7 @@ def main():
 
     if not handled:
         send_message(bot_token, chat_id,
-            "⏰ Nessuna risposta in 30 minuti. Post non pubblicato.")
+            "⏰ Nessuna risposta ricevuta. Post non pubblicato.")
         print("[telegram_bot] Timeout.")
         pending = load_pending()
         if pending:
