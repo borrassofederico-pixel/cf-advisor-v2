@@ -1,0 +1,847 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gestione Presenze</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- EmailJS SDK per notifiche email all'admin -->
+  <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+  <script type="module">
+    // ======================================================
+    // CONFIGURAZIONE FIREBASE
+    // Sostituisci questi valori con quelli del tuo progetto Firebase
+    // ======================================================
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import {
+      getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged
+    } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+    import {
+      getFirestore, collection, doc, getDoc, getDocs, addDoc, updateDoc, deleteDoc,
+      query, where, orderBy, serverTimestamp, setDoc
+    } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyAbWz5e9Ot64w8xHXv6zbs5KKS9-4Za3Qg",
+      authDomain: "presenze-azienda-10083.firebaseapp.com",
+      projectId: "presenze-azienda-10083",
+      storageBucket: "presenze-azienda-10083.firebasestorage.app",
+      messagingSenderId: "691393406305",
+      appId: "1:691393406305:web:9cee423a29131627db9120"
+    };
+
+    const EMAILJS_PUBLIC_KEY  = "SOSTITUISCI_PUBLIC_KEY";
+    const EMAILJS_SERVICE_ID  = "SOSTITUISCI_SERVICE_ID";
+    const EMAILJS_TEMPLATE_ID = "SOSTITUISCI_TEMPLATE_ID";
+    const ADMIN_EMAIL         = "SOSTITUISCI_EMAIL_ADMIN";
+
+    const BACKUP_INTERVAL_DAYS = 7;
+    const BACKUP_KEY = "presenze_last_backup";
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+
+    let currentUser = null;
+    let currentUserData = null;
+
+    function showPage(id) {
+      document.querySelectorAll(".page").forEach(p => p.classList.add("hidden"));
+      document.getElementById(id)?.classList.remove("hidden");
+    }
+
+    function showToast(msg, type = "success") {
+      const t = document.getElementById("toast");
+      t.textContent = msg;
+      t.className = `fixed bottom-6 right-6 px-5 py-3 rounded-xl text-white text-sm font-medium shadow-lg transition-all z-50 ${type === "success" ? "bg-green-600" : "bg-red-600"}`;
+      t.classList.remove("hidden");
+      setTimeout(() => t.classList.add("hidden"), 3500);
+    }
+
+    function formatDate(ts) {
+      if (!ts) return "—";
+      const d = ts.toDate ? ts.toDate() : new Date(ts);
+      return d.toLocaleDateString("it-IT");
+    }
+
+    function daysBetween(start, end) {
+      const s = new Date(start);
+      const e = new Date(end);
+      let count = 0;
+      const cur = new Date(s);
+      while (cur <= e) {
+        const day = cur.getDay();
+        if (day !== 0 && day !== 6) count++;
+        cur.setDate(cur.getDate() + 1);
+      }
+      return count;
+    }
+
+    function statusBadge(status) {
+      const map = {
+        pending: "bg-yellow-100 text-yellow-800",
+        approved: "bg-green-100 text-green-800",
+        rejected: "bg-red-100 text-red-800"
+      };
+      const labels = { pending: "In attesa", approved: "Approvata", rejected: "Rifiutata" };
+      return `<span class="px-2 py-0.5 rounded-full text-xs font-semibold ${map[status] || ''}">${labels[status] || status}</span>`;
+    }
+
+    async function logAudit(action, details) {
+      await addDoc(collection(db, "auditLog"), {
+        action,
+        details,
+        performedBy: currentUser.email,
+        performedByUid: currentUser.uid,
+        timestamp: serverTimestamp()
+      });
+    }
+
+    document.getElementById("loginForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const email = document.getElementById("loginEmail").value.trim();
+      const pass = document.getElementById("loginPass").value;
+      const btn = document.getElementById("loginBtn");
+      btn.disabled = true;
+      btn.textContent = "Accesso...";
+      try {
+        await signInWithEmailAndPassword(auth, email, pass);
+      } catch (err) {
+        showToast("Credenziali non valide", "error");
+        btn.disabled = false;
+        btn.textContent = "Accedi";
+      }
+    });
+
+    document.getElementById("logoutBtn")?.addEventListener("click", () => signOut(auth));
+    document.getElementById("logoutBtnAdmin")?.addEventListener("click", () => signOut(auth));
+
+    onAuthStateChanged(auth, async (user) => {
+      if (!user) {
+        currentUser = null;
+        currentUserData = null;
+        showPage("loginPage");
+        document.getElementById("loginBtn").disabled = false;
+        document.getElementById("loginBtn").textContent = "Accedi";
+        return;
+      }
+      currentUser = user;
+      const snap = await getDoc(doc(db, "users", user.uid));
+      if (!snap.exists()) {
+        await signOut(auth);
+        showToast("Utente non configurato. Contatta l'amministratore.", "error");
+        return;
+      }
+      currentUserData = snap.data();
+      if (currentUserData.role === "admin") {
+        loadAdminDashboard();
+        showPage("adminPage");
+      } else {
+        loadEmployeeDashboard();
+        showPage("employeePage");
+      }
+    });
+
+    async function loadEmployeeDashboard() {
+      document.getElementById("empName").textContent = currentUserData.name;
+      const snap = await getDoc(doc(db, "users", currentUser.uid));
+      const data = snap.data();
+      document.getElementById("ferieResidue").textContent = data.ferieGiorni ?? 0;
+      document.getElementById("permessiResiduiOre").textContent = data.permessiOre ?? 0;
+
+      const q = query(
+        collection(db, "requests"),
+        where("userId", "==", currentUser.uid),
+        orderBy("createdAt", "desc")
+      );
+      const requests = await getDocs(q);
+      const tbody = document.getElementById("myRequestsTable");
+      tbody.innerHTML = "";
+      requests.forEach(r => {
+        const d = r.data();
+        tbody.innerHTML += `
+          <tr class="border-b hover:bg-gray-50">
+            <td class="py-3 px-4">${d.type === "ferie" ? "🏖️ Ferie" : "⏱️ Permesso"}</td>
+            <td class="py-3 px-4">${d.startDate}</td>
+            <td class="py-3 px-4">${d.endDate || "—"}</td>
+            <td class="py-3 px-4">${d.type === "ferie" ? (d.giorni + " gg") : (d.ore + " h")}</td>
+            <td class="py-3 px-4">${statusBadge(d.status)}</td>
+            <td class="py-3 px-4 text-gray-500 text-sm">${d.note || "—"}</td>
+            <td class="py-3 px-4">
+              ${d.status === "pending" ? `<button onclick="cancelRequest('${r.id}')" class="text-red-500 text-sm hover:underline">Annulla</button>` : ""}
+            </td>
+          </tr>`;
+      });
+      if (requests.empty) tbody.innerHTML = `<tr><td colspan="7" class="text-center py-6 text-gray-400">Nessuna richiesta</td></tr>`;
+    }
+
+    window.cancelRequest = async (id) => {
+      if (!confirm("Annullare questa richiesta?")) return;
+      const snap = await getDoc(doc(db, "requests", id));
+      const d = snap.data();
+      if (d.status !== "pending") return showToast("Puoi annullare solo richieste in attesa", "error");
+      await updateDoc(doc(db, "requests", id), { status: "cancelled" });
+      const userRef = doc(db, "users", currentUser.uid);
+      const uSnap = await getDoc(userRef);
+      const ud = uSnap.data();
+      if (d.type === "ferie") {
+        await updateDoc(userRef, { ferieGiorni: (ud.ferieGiorni ?? 0) + d.giorni });
+      } else {
+        await updateDoc(userRef, { permessiOre: (ud.permessiOre ?? 0) + d.ore });
+      }
+      await logAudit("cancel_request", { requestId: id, type: d.type });
+      showToast("Richiesta annullata");
+      loadEmployeeDashboard();
+    };
+
+    document.getElementById("requestForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const type = document.getElementById("reqType").value;
+      const startDate = document.getElementById("reqStart").value;
+      const endDate = document.getElementById("reqEnd").value;
+      const ore = parseFloat(document.getElementById("reqOre").value) || 0;
+      const note = document.getElementById("reqNote").value.trim();
+
+      const userRef = doc(db, "users", currentUser.uid);
+      const uSnap = await getDoc(userRef);
+      const ud = uSnap.data();
+
+      let giorni = 0;
+      if (type === "ferie") {
+        if (!endDate) return showToast("Inserisci data fine per le ferie", "error");
+        giorni = daysBetween(startDate, endDate);
+        if (giorni <= 0) return showToast("Date non valide", "error");
+        if ((ud.ferieGiorni ?? 0) < giorni) return showToast(`Ferie insufficienti (disponibili: ${ud.ferieGiorni} gg)`, "error");
+        await updateDoc(userRef, { ferieGiorni: ud.ferieGiorni - giorni });
+      } else {
+        if (ore <= 0) return showToast("Inserisci le ore di permesso", "error");
+        if ((ud.permessiOre ?? 0) < ore) return showToast(`Permessi insufficienti (disponibili: ${ud.permessiOre} h)`, "error");
+        await updateDoc(userRef, { permessiOre: ud.permessiOre - ore });
+      }
+
+      await addDoc(collection(db, "requests"), {
+        userId: currentUser.uid,
+        userName: currentUserData.name,
+        type,
+        startDate,
+        endDate: type === "ferie" ? endDate : startDate,
+        giorni: type === "ferie" ? giorni : null,
+        ore: type === "permesso" ? ore : null,
+        note,
+        status: "pending",
+        createdAt: serverTimestamp()
+      });
+
+      await logAudit("new_request", { type, startDate, endDate, giorni, ore });
+      showToast("Richiesta inviata!");
+      e.target.reset();
+      toggleRequestFields();
+      loadEmployeeDashboard();
+    });
+
+    window.toggleRequestFields = function () {
+      const type = document.getElementById("reqType").value;
+      document.getElementById("ferieFields").classList.toggle("hidden", type !== "ferie");
+      document.getElementById("permessoFields").classList.toggle("hidden", type !== "permesso");
+    };
+
+    let adminTab = "requests";
+
+    window.setAdminTab = function (tab) {
+      adminTab = tab;
+      document.querySelectorAll(".admin-tab").forEach(t => {
+        t.classList.remove("border-blue-600", "text-blue-600");
+        t.classList.add("border-transparent", "text-gray-500");
+      });
+      document.getElementById("tab-" + tab).classList.add("border-blue-600", "text-blue-600");
+      document.getElementById("tab-" + tab).classList.remove("border-transparent", "text-gray-500");
+      document.querySelectorAll(".admin-section").forEach(s => s.classList.add("hidden"));
+      document.getElementById("section-" + tab).classList.remove("hidden");
+      if (tab === "requests") loadAdminRequests();
+      if (tab === "employees") loadAdminEmployees();
+      if (tab === "audit") loadAuditLog();
+    };
+
+    async function loadAdminDashboard() {
+      document.getElementById("adminName").textContent = currentUserData.name;
+      setAdminTab("requests");
+    }
+
+    async function loadAdminRequests() {
+      const statusFilter = document.getElementById("filterStatus")?.value || "all";
+      let q;
+      if (statusFilter === "all") {
+        q = query(collection(db, "requests"), orderBy("createdAt", "desc"));
+      } else {
+        q = query(collection(db, "requests"), where("status", "==", statusFilter), orderBy("createdAt", "desc"));
+      }
+      const requests = await getDocs(q);
+      const tbody = document.getElementById("adminRequestsTable");
+      tbody.innerHTML = "";
+      requests.forEach(r => {
+        const d = r.data();
+        tbody.innerHTML += `
+          <tr class="border-b hover:bg-gray-50">
+            <td class="py-3 px-4 font-medium">${d.userName}</td>
+            <td class="py-3 px-4">${d.type === "ferie" ? "🏖️ Ferie" : "⏱️ Permesso"}</td>
+            <td class="py-3 px-4">${d.startDate}</td>
+            <td class="py-3 px-4">${d.endDate || "—"}</td>
+            <td class="py-3 px-4">${d.type === "ferie" ? (d.giorni + " gg") : (d.ore + " h")}</td>
+            <td class="py-3 px-4">${statusBadge(d.status)}</td>
+            <td class="py-3 px-4 text-gray-500 text-sm">${d.note || "—"}</td>
+            <td class="py-3 px-4">
+              ${d.status === "pending" ? `
+                <button onclick="approveRequest('${r.id}')" class="text-green-600 hover:underline text-sm mr-2">✓ Approva</button>
+                <button onclick="rejectRequest('${r.id}')" class="text-red-500 hover:underline text-sm">✕ Rifiuta</button>
+              ` : `<button onclick="deleteRequest('${r.id}', '${d.userId}', '${d.type}', ${d.giorni || 0}, ${d.ore || 0}, '${d.status}')" class="text-gray-400 hover:text-red-500 text-sm">🗑</button>`}
+            </td>
+          </tr>`;
+      });
+      if (requests.empty) tbody.innerHTML = `<tr><td colspan="8" class="text-center py-6 text-gray-400">Nessuna richiesta</td></tr>`;
+    }
+
+    window.approveRequest = async (id) => {
+      await updateDoc(doc(db, "requests", id), { status: "approved", reviewedBy: currentUser.email, reviewedAt: serverTimestamp() });
+      await logAudit("approve_request", { requestId: id });
+      showToast("Richiesta approvata");
+      loadAdminRequests();
+    };
+
+    window.rejectRequest = async (id) => {
+      const snap = await getDoc(doc(db, "requests", id));
+      const d = snap.data();
+      await updateDoc(doc(db, "requests", id), { status: "rejected", reviewedBy: currentUser.email, reviewedAt: serverTimestamp() });
+      const userRef = doc(db, "users", d.userId);
+      const uSnap = await getDoc(userRef);
+      const ud = uSnap.data();
+      if (d.type === "ferie") {
+        await updateDoc(userRef, { ferieGiorni: (ud.ferieGiorni ?? 0) + (d.giorni ?? 0) });
+      } else {
+        await updateDoc(userRef, { permessiOre: (ud.permessiOre ?? 0) + (d.ore ?? 0) });
+      }
+      await logAudit("reject_request", { requestId: id });
+      showToast("Richiesta rifiutata — saldo reaccreditato");
+      loadAdminRequests();
+    };
+
+    window.deleteRequest = async (id, userId, type, giorni, ore, status) => {
+      if (!confirm("Eliminare definitivamente questa richiesta?")) return;
+      await deleteDoc(doc(db, "requests", id));
+      if (status === "approved") {
+        const userRef = doc(db, "users", userId);
+        const uSnap = await getDoc(userRef);
+        const ud = uSnap.data();
+        if (type === "ferie") {
+          await updateDoc(userRef, { ferieGiorni: (ud.ferieGiorni ?? 0) + giorni });
+        } else {
+          await updateDoc(userRef, { permessiOre: (ud.permessiOre ?? 0) + ore });
+        }
+      }
+      await logAudit("delete_request", { requestId: id, type });
+      showToast("Richiesta eliminata");
+      loadAdminRequests();
+    };
+
+    document.getElementById("adminAddForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const uid = document.getElementById("adminEmpSelect").value;
+      const type = document.getElementById("adminReqType").value;
+      const startDate = document.getElementById("adminReqStart").value;
+      const endDate = document.getElementById("adminReqEnd").value;
+      const ore = parseFloat(document.getElementById("adminReqOre").value) || 0;
+      const note = document.getElementById("adminReqNote").value.trim();
+      const autoApprove = document.getElementById("autoApprove").checked;
+
+      const uSnap = await getDoc(doc(db, "users", uid));
+      const ud = uSnap.data();
+      let giorni = 0;
+
+      if (type === "ferie") {
+        giorni = daysBetween(startDate, endDate || startDate);
+        if (autoApprove && (ud.ferieGiorni ?? 0) < giorni) return showToast("Ferie insufficienti per questo dipendente", "error");
+        if (autoApprove) await updateDoc(doc(db, "users", uid), { ferieGiorni: ud.ferieGiorni - giorni });
+      } else {
+        if (autoApprove && (ud.permessiOre ?? 0) < ore) return showToast("Permessi insufficienti per questo dipendente", "error");
+        if (autoApprove) await updateDoc(doc(db, "users", uid), { permessiOre: ud.permessiOre - ore });
+      }
+
+      await addDoc(collection(db, "requests"), {
+        userId: uid,
+        userName: ud.name,
+        type,
+        startDate,
+        endDate: type === "ferie" ? endDate : startDate,
+        giorni: type === "ferie" ? giorni : null,
+        ore: type === "permesso" ? ore : null,
+        note: note + " [Inserito da admin]",
+        status: autoApprove ? "approved" : "pending",
+        createdAt: serverTimestamp()
+      });
+
+      await logAudit("admin_add_request", { uid, type, startDate, giorni, ore, autoApprove });
+      showToast("Richiesta inserita!");
+      e.target.reset();
+      loadAdminRequests();
+    });
+
+    async function loadAdminEmployees() {
+      const snap = await getDocs(collection(db, "users"));
+      const tbody = document.getElementById("employeesTable");
+      tbody.innerHTML = "";
+      const sel = document.getElementById("adminEmpSelect");
+      sel.innerHTML = "";
+      snap.forEach(s => {
+        const d = s.data();
+        if (d.role === "admin") return;
+        tbody.innerHTML += `
+          <tr class="border-b hover:bg-gray-50" id="emp-row-${s.id}">
+            <td class="py-3 px-4 font-medium">${d.name}</td>
+            <td class="py-3 px-4 text-gray-500">${d.email}</td>
+            <td class="py-3 px-4">
+              <input type="number" value="${d.ferieGiorni ?? 0}" min="0" step="0.5"
+                class="w-20 border rounded px-2 py-1 text-sm" id="ferie-${s.id}" />
+            </td>
+            <td class="py-3 px-4">
+              <input type="number" value="${d.permessiOre ?? 0}" min="0" step="0.5"
+                class="w-20 border rounded px-2 py-1 text-sm" id="perm-${s.id}" />
+            </td>
+            <td class="py-3 px-4">
+              <button onclick="saveEmployee('${s.id}')" class="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700">Salva</button>
+              <button onclick="deleteEmployee('${s.id}', '${d.name}')" class="text-red-400 hover:text-red-600 text-sm ml-2">🗑</button>
+            </td>
+          </tr>`;
+        sel.innerHTML += `<option value="${s.id}">${d.name}</option>`;
+      });
+    }
+
+    window.saveEmployee = async (uid) => {
+      const ferieGiorni = parseFloat(document.getElementById("ferie-" + uid).value) || 0;
+      const permessiOre = parseFloat(document.getElementById("perm-" + uid).value) || 0;
+      await updateDoc(doc(db, "users", uid), { ferieGiorni, permessiOre });
+      await logAudit("update_employee_balance", { uid, ferieGiorni, permessiOre });
+      showToast("Saldo aggiornato");
+    };
+
+    window.deleteEmployee = async (uid, name) => {
+      if (!confirm(`Eliminare il dipendente ${name}? Questa azione non può essere annullata.`)) return;
+      await deleteDoc(doc(db, "users", uid));
+      await logAudit("delete_employee", { uid, name });
+      showToast("Dipendente eliminato");
+      loadAdminEmployees();
+    };
+
+    document.getElementById("addEmployeeForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const name = document.getElementById("newEmpName").value.trim();
+      const email = document.getElementById("newEmpEmail").value.trim();
+      const ferieGiorni = parseFloat(document.getElementById("newEmpFerie").value) || 0;
+      const permessiOre = parseFloat(document.getElementById("newEmpPermessi").value) || 0;
+      const uid = document.getElementById("newEmpUID").value.trim();
+      if (!uid) return showToast("Inserisci l'UID Firebase del dipendente", "error");
+
+      await setDoc(doc(db, "users", uid), {
+        name, email, role: "employee", ferieGiorni, permessiOre
+      });
+      await logAudit("add_employee", { uid, name, email });
+      showToast(`Dipendente ${name} aggiunto!`);
+      e.target.reset();
+      loadAdminEmployees();
+    });
+
+    async function loadAuditLog() {
+      const q = query(collection(db, "auditLog"), orderBy("timestamp", "desc"));
+      const snap = await getDocs(q);
+      const tbody = document.getElementById("auditTable");
+      tbody.innerHTML = "";
+      snap.forEach(s => {
+        const d = s.data();
+        tbody.innerHTML += `
+          <tr class="border-b hover:bg-gray-50 text-sm">
+            <td class="py-2 px-4 text-gray-500">${formatDate(d.timestamp)}</td>
+            <td class="py-2 px-4">${d.performedBy}</td>
+            <td class="py-2 px-4 font-mono text-xs bg-gray-50">${d.action}</td>
+            <td class="py-2 px-4 text-gray-600">${JSON.stringify(d.details)}</td>
+          </tr>`;
+      });
+      if (snap.empty) tbody.innerHTML = `<tr><td colspan="4" class="text-center py-6 text-gray-400">Nessuna attività</td></tr>`;
+    }
+
+    document.getElementById("filterStatus")?.addEventListener("change", loadAdminRequests);
+
+    document.getElementById("excelFile")?.addEventListener("change", async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = async (ev) => {
+        const text = ev.target.result;
+        const rows = text.split("\n").slice(1);
+        let count = 0;
+        for (const row of rows) {
+          const cols = row.split(";");
+          if (cols.length < 6) continue;
+          const [uid, userName, type, startDate, endDate, quantita, note] = cols.map(c => c.trim().replace(/"/g, ""));
+          if (!uid || !type || !startDate) continue;
+          const giorni = type === "ferie" ? parseFloat(quantita) : null;
+          const ore = type === "permesso" ? parseFloat(quantita) : null;
+          await addDoc(collection(db, "requests"), {
+            userId: uid, userName, type, startDate, endDate: endDate || startDate,
+            giorni, ore, note: (note || "") + " [Importato da Excel]",
+            status: "approved", createdAt: serverTimestamp()
+          });
+          count++;
+        }
+        await logAudit("excel_import", { count });
+        showToast(`${count} righe importate con successo!`);
+      };
+      reader.readAsText(file, "UTF-8");
+    });
+
+    window.downloadTemplate = function () {
+      const csv = `uid;userName;type;startDate;endDate;quantita;note\nUID_FIREBASE;Mario Rossi;ferie;2024-07-01;2024-07-14;10;Vacanze estive\nUID_FIREBASE;Mario Rossi;permesso;2024-03-15;2024-03-15;4;Visita medica`;
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "template_presenze.csv";
+      a.click();
+    };
+  </script>
+</head>
+<body class="bg-gray-100 min-h-screen font-sans">
+
+  <div id="toast" class="hidden fixed bottom-6 right-6 px-5 py-3 rounded-xl text-white text-sm font-medium shadow-lg z-50"></div>
+
+  <div id="loginPage" class="page flex items-center justify-center min-h-screen">
+    <div class="bg-white rounded-2xl shadow-xl p-8 w-full max-w-sm">
+      <div class="text-center mb-8">
+        <div class="text-4xl mb-2">📋</div>
+        <h1 class="text-2xl font-bold text-gray-800">Gestione Presenze</h1>
+        <p class="text-gray-500 text-sm mt-1">Accedi con le tue credenziali</p>
+      </div>
+      <form id="loginForm" class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Email</label>
+          <input id="loginEmail" type="email" required placeholder="nome@azienda.it"
+            class="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Password</label>
+          <input id="loginPass" type="password" required placeholder="••••••••"
+            class="w-full border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+        </div>
+        <button id="loginBtn" type="submit"
+          class="w-full bg-blue-600 text-white py-2.5 rounded-lg font-semibold hover:bg-blue-700 transition">
+          Accedi
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <div id="employeePage" class="page hidden">
+    <header class="bg-white shadow-sm">
+      <div class="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <span class="text-2xl">📋</span>
+          <div>
+            <h1 class="font-bold text-gray-800">Gestione Presenze</h1>
+            <p class="text-xs text-gray-400">Area Dipendente</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-4">
+          <span class="text-sm text-gray-600">Ciao, <strong id="empName"></strong></span>
+          <button id="logoutBtn" class="text-sm text-red-500 hover:underline">Esci</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="max-w-5xl mx-auto px-4 py-8 space-y-6">
+      <div class="grid grid-cols-2 gap-4">
+        <div class="bg-white rounded-2xl shadow p-6 flex items-center gap-4">
+          <div class="text-3xl">🏖️</div>
+          <div>
+            <p class="text-sm text-gray-500">Ferie residue</p>
+            <p class="text-3xl font-bold text-blue-600"><span id="ferieResidue">0</span> <span class="text-base font-normal text-gray-400">giorni</span></p>
+          </div>
+        </div>
+        <div class="bg-white rounded-2xl shadow p-6 flex items-center gap-4">
+          <div class="text-3xl">⏱️</div>
+          <div>
+            <p class="text-sm text-gray-500">Permessi residui</p>
+            <p class="text-3xl font-bold text-purple-600"><span id="permessiResiduiOre">0</span> <span class="text-base font-normal text-gray-400">ore</span></p>
+          </div>
+        </div>
+      </div>
+
+      <div class="bg-white rounded-2xl shadow p-6">
+        <h2 class="text-lg font-semibold text-gray-800 mb-4">Nuova richiesta</h2>
+        <form id="requestForm" class="space-y-4">
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Tipo</label>
+              <select id="reqType" onchange="toggleRequestFields()"
+                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="ferie">🏖️ Ferie</option>
+                <option value="permesso">⏱️ Permesso</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Data inizio</label>
+              <input id="reqStart" type="date" required
+                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+          </div>
+          <div id="ferieFields" class="grid grid-cols-2 gap-4">
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Data fine</label>
+              <input id="reqEnd" type="date"
+                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+          </div>
+          <div id="permessoFields" class="hidden">
+            <label class="block text-sm font-medium text-gray-700 mb-1">Ore di permesso</label>
+            <input id="reqOre" type="number" min="0.5" max="8" step="0.5" placeholder="es. 2"
+              class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Note (opzionale)</label>
+            <input id="reqNote" type="text" placeholder="Motivazione..."
+              class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          </div>
+          <button type="submit"
+            class="bg-blue-600 text-white px-6 py-2.5 rounded-lg font-semibold hover:bg-blue-700 transition text-sm">
+            Invia richiesta
+          </button>
+        </form>
+      </div>
+
+      <div class="bg-white rounded-2xl shadow p-6">
+        <h2 class="text-lg font-semibold text-gray-800 mb-4">Le mie richieste</h2>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b bg-gray-50 text-gray-500 text-left">
+                <th class="py-2 px-4">Tipo</th>
+                <th class="py-2 px-4">Inizio</th>
+                <th class="py-2 px-4">Fine</th>
+                <th class="py-2 px-4">Quantità</th>
+                <th class="py-2 px-4">Stato</th>
+                <th class="py-2 px-4">Note</th>
+                <th class="py-2 px-4"></th>
+              </tr>
+            </thead>
+            <tbody id="myRequestsTable"></tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <div id="adminPage" class="page hidden">
+    <header class="bg-white shadow-sm">
+      <div class="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <span class="text-2xl">📋</span>
+          <div>
+            <h1 class="font-bold text-gray-800">Gestione Presenze</h1>
+            <p class="text-xs text-gray-400">Pannello Amministratore</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-4">
+          <span class="text-sm text-gray-600">Admin: <strong id="adminName"></strong></span>
+          <button id="logoutBtnAdmin" class="text-sm text-red-500 hover:underline">Esci</button>
+        </div>
+      </div>
+    </header>
+
+    <div class="bg-white border-b">
+      <div class="max-w-6xl mx-auto px-4 flex gap-0">
+        <button id="tab-requests" onclick="setAdminTab('requests')"
+          class="admin-tab border-b-2 border-blue-600 text-blue-600 px-6 py-4 text-sm font-medium">
+          📥 Richieste
+        </button>
+        <button id="tab-employees" onclick="setAdminTab('employees')"
+          class="admin-tab border-b-2 border-transparent text-gray-500 px-6 py-4 text-sm font-medium hover:text-gray-700">
+          👥 Dipendenti
+        </button>
+        <button id="tab-audit" onclick="setAdminTab('audit')"
+          class="admin-tab border-b-2 border-transparent text-gray-500 px-6 py-4 text-sm font-medium hover:text-gray-700">
+          🔍 Audit Log
+        </button>
+      </div>
+    </div>
+
+    <main class="max-w-6xl mx-auto px-4 py-8">
+
+      <div id="section-requests" class="admin-section space-y-6">
+        <div class="flex items-center justify-between">
+          <h2 class="text-lg font-semibold text-gray-800">Richieste dipendenti</h2>
+          <select id="filterStatus" class="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none">
+            <option value="all">Tutte</option>
+            <option value="pending">In attesa</option>
+            <option value="approved">Approvate</option>
+            <option value="rejected">Rifiutate</option>
+          </select>
+        </div>
+        <div class="bg-white rounded-2xl shadow overflow-hidden">
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead>
+                <tr class="border-b bg-gray-50 text-gray-500 text-left">
+                  <th class="py-3 px-4">Dipendente</th>
+                  <th class="py-3 px-4">Tipo</th>
+                  <th class="py-3 px-4">Inizio</th>
+                  <th class="py-3 px-4">Fine</th>
+                  <th class="py-3 px-4">Quantità</th>
+                  <th class="py-3 px-4">Stato</th>
+                  <th class="py-3 px-4">Note</th>
+                  <th class="py-3 px-4">Azioni</th>
+                </tr>
+              </thead>
+              <tbody id="adminRequestsTable"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="bg-white rounded-2xl shadow p-6">
+          <h3 class="font-semibold text-gray-800 mb-4">Inserimento manuale richiesta</h3>
+          <form id="adminAddForm" class="space-y-4">
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Dipendente</label>
+                <select id="adminEmpSelect" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"></select>
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Tipo</label>
+                <select id="adminReqType" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                  <option value="ferie">🏖️ Ferie</option>
+                  <option value="permesso">⏱️ Permesso</option>
+                </select>
+              </div>
+            </div>
+            <div class="grid grid-cols-3 gap-4">
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Data inizio</label>
+                <input id="adminReqStart" type="date" required class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Data fine (ferie)</label>
+                <input id="adminReqEnd" type="date" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Ore (permesso)</label>
+                <input id="adminReqOre" type="number" min="0.5" step="0.5" placeholder="es. 4" class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+              </div>
+            </div>
+            <div class="grid grid-cols-2 gap-4 items-end">
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Note</label>
+                <input id="adminReqNote" type="text" placeholder="Motivazione..." class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+              </div>
+              <div class="flex items-center gap-3">
+                <label class="flex items-center gap-2 text-sm text-gray-700">
+                  <input id="autoApprove" type="checkbox" checked class="rounded" />
+                  Approva automaticamente
+                </label>
+                <button type="submit" class="bg-blue-600 text-white px-5 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700">
+                  Inserisci
+                </button>
+              </div>
+            </div>
+          </form>
+        </div>
+
+        <div class="bg-white rounded-2xl shadow p-6">
+          <h3 class="font-semibold text-gray-800 mb-2">Importa da file CSV/Excel</h3>
+          <p class="text-sm text-gray-500 mb-4">Importa dati storici da un file CSV (separatore <code class="bg-gray-100 px-1 rounded">;</code>). Le righe importate vengono segnate come approvate.</p>
+          <div class="flex items-center gap-4">
+            <input id="excelFile" type="file" accept=".csv,.txt"
+              class="border border-gray-300 rounded-lg px-3 py-2 text-sm file:mr-3 file:bg-blue-600 file:text-white file:border-0 file:rounded file:px-3 file:py-1 file:text-sm" />
+            <button onclick="downloadTemplate()" class="text-blue-600 text-sm hover:underline">
+              Scarica template CSV
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div id="section-employees" class="admin-section hidden space-y-6">
+        <h2 class="text-lg font-semibold text-gray-800">Gestione dipendenti</h2>
+        <div class="bg-white rounded-2xl shadow overflow-hidden">
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead>
+                <tr class="border-b bg-gray-50 text-gray-500 text-left">
+                  <th class="py-3 px-4">Nome</th>
+                  <th class="py-3 px-4">Email</th>
+                  <th class="py-3 px-4">Ferie (giorni)</th>
+                  <th class="py-3 px-4">Permessi (ore)</th>
+                  <th class="py-3 px-4">Azioni</th>
+                </tr>
+              </thead>
+              <tbody id="employeesTable"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="bg-white rounded-2xl shadow p-6">
+          <h3 class="font-semibold text-gray-800 mb-4">Aggiungi dipendente</h3>
+          <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4 text-sm text-amber-800">
+            Prima crea l'utente in <strong>Firebase Console - Authentication</strong>, poi copia l'UID qui sotto.
+          </div>
+          <form id="addEmployeeForm" class="grid grid-cols-2 gap-4">
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Nome completo</label>
+              <input id="newEmpName" type="text" required placeholder="Mario Rossi"
+                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Email</label>
+              <input id="newEmpEmail" type="email" required placeholder="mario@azienda.it"
+                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Ferie iniziali (giorni)</label>
+              <input id="newEmpFerie" type="number" value="0" min="0" step="0.5"
+                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Permessi iniziali (ore)</label>
+              <input id="newEmpPermessi" type="number" value="0" min="0" step="0.5"
+                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+            </div>
+            <div class="col-span-2">
+              <label class="block text-sm font-medium text-gray-700 mb-1">UID Firebase (da Authentication)</label>
+              <input id="newEmpUID" type="text" required placeholder="abc123def456..."
+                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono" />
+            </div>
+            <div class="col-span-2">
+              <button type="submit" class="bg-green-600 text-white px-6 py-2.5 rounded-lg font-semibold hover:bg-green-700 text-sm">
+                + Aggiungi dipendente
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <div id="section-audit" class="admin-section hidden">
+        <h2 class="text-lg font-semibold text-gray-800 mb-4">Audit Log - tutte le modifiche</h2>
+        <div class="bg-white rounded-2xl shadow overflow-hidden">
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead>
+                <tr class="border-b bg-gray-50 text-gray-500 text-left">
+                  <th class="py-2 px-4">Data</th>
+                  <th class="py-2 px-4">Utente</th>
+                  <th class="py-2 px-4">Azione</th>
+                  <th class="py-2 px-4">Dettagli</th>
+                </tr>
+              </thead>
+              <tbody id="auditTable"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+</body>
+</html>
