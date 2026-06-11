@@ -195,9 +195,47 @@ def publish_to_linkedin(pending: dict) -> str | None:
         return None
 
 
+SYSTEM_PROMPT = """Sei un consulente finanziario italiano esperto. Crei contenuti LinkedIn
+sotto forma di carosello: ogni slide ha un titolo breve e un testo esplicativo.
+
+Rispondi SOLO con un JSON valido (nessun testo prima o dopo), con questa struttura:
+{
+  "title": "Titolo della slide di copertina (max 8 parole, incisivo)",
+  "caption": "Testo del post LinkedIn che accompagna il carosello (100-150 parole, hook forte, CTA finale, 3-4 hashtag pertinenti)",
+  "points": [
+    {"headline": "Titolo punto 1 (max 5 parole)", "body": "Spiegazione (max 30 parole, concreta e utile)"},
+    {"headline": "Titolo punto 2 (max 5 parole)", "body": "Spiegazione (max 30 parole, concreta e utile)"},
+    {"headline": "Titolo punto 3 (max 5 parole)", "body": "Spiegazione (max 30 parole, concreta e utile)"},
+    {"headline": "Titolo punto 4 (max 5 parole)", "body": "Spiegazione (max 30 parole, concreta e utile)"}
+  ]
+}
+
+Regole:
+- Tono professionale ma accessibile
+- NON promettere rendimenti specifici
+- Italiano corretto, zero gergo inutile
+- I titoli dei punti devono essere autonomi e leggibili anche senza il body"""
+
+
+def _generate_content(topic: str) -> dict:
+    """Genera contenuto ex-novo per un dato tema."""
+    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+    msg = client.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=800,
+        system=SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": f"Tema del carosello: {topic}"}],
+    )
+    raw = msg.content[0].text.strip()
+    if raw.startswith("```"):
+        raw = raw.split("```")[1]
+        if raw.startswith("json"):
+            raw = raw[4:]
+    return json.loads(raw.strip())
+
+
 def refine_content(existing: dict, feedback: str) -> dict:
     """Chiama Claude per applicare le modifiche richieste al contenuto esistente."""
-    from generate_post import SYSTEM_PROMPT
     client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
     user_msg = (
         f"Contenuto attuale:\n{json.dumps(existing, ensure_ascii=False, indent=2)}\n\n"
@@ -218,15 +256,34 @@ def refine_content(existing: dict, feedback: str) -> dict:
     return json.loads(raw.strip())
 
 
+def _send_slides_to_telegram(bot_token: str, chat_id: str, slide_paths: list, caption: str) -> None:
+    import json as _json
+    from pathlib import Path as _Path
+    media = []
+    files = {}
+    for i, path in enumerate(slide_paths[:10]):
+        key = f"photo{i}"
+        media.append({"type": "photo", "media": f"attach://{key}",
+                      "caption": caption if i == 0 else "", "parse_mode": "Markdown"})
+        files[key] = (_Path(path).name, open(path, "rb"), "image/jpeg")
+    resp = requests.post(
+        f"https://api.telegram.org/bot{bot_token}/sendMediaGroup",
+        data={"chat_id": chat_id, "media": _json.dumps(media)},
+        files=files, timeout=60,
+    )
+    for _, (_, f, _) in files.items():
+        f.close()
+    resp.raise_for_status()
+
+
 def send_preview_to_telegram(bot_token: str, chat_id: str, pending: dict) -> None:
     """Ri-invia l'anteprima slide + bottoni di approvazione su Telegram."""
-    from generate_post import send_slides_to_telegram
     content = pending["content"]
     topic = pending.get("topic", "")
 
     slide_paths = save_slide_jpegs(content, size=800)
     album_caption = f"🎠 *{content['title']}*\n🏷️ _{topic}_"
-    send_slides_to_telegram(bot_token, chat_id, slide_paths, album_caption)
+    _send_slides_to_telegram(bot_token, chat_id, slide_paths, album_caption)
     for p in slide_paths:
         Path(p).unlink(missing_ok=True)
     preview_dir = Path("automation/preview_slides")
@@ -326,8 +383,7 @@ def main():
                                 pending["content"] = updated
                             else:  # tema
                                 send_message(bot_token, chat_id, f"🔀 Genero un nuovo post su: _{text}_...")
-                                from generate_post import generate_content
-                                updated = generate_content(text)
+                                updated = _generate_content(text)
                                 updated["topic"] = text
                                 updated["author"] = "Federico Borrasso"
                                 pending["content"] = updated
