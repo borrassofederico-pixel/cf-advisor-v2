@@ -295,7 +295,7 @@ def main():
     offset = 0
     start_time = time.time()
     handled = False
-    waiting_for_edit = False
+    waiting_for_edit = None  # None | "text" | "tema"
 
     while not handled and (time.time() - start_time) < POLL_TIMEOUT:
         try:
@@ -309,25 +309,35 @@ def main():
         for update in updates:
             offset = update["update_id"] + 1
 
-            # Gestione messaggio di testo (richiesta modifica)
+            # Gestione messaggio di testo (modifica testo o cambio tema)
             if waiting_for_edit:
                 msg = update.get("message", {})
                 text = msg.get("text", "").strip()
                 if text and not text.startswith("/"):
+                    mode = waiting_for_edit
                     waiting_for_edit = False
-                    send_message(bot_token, chat_id, "✏️ Applico le modifiche, attendi...")
                     pending = load_pending()
                     if pending:
                         try:
-                            updated = refine_content(pending["content"], text)
-                            updated["topic"] = pending.get("topic", "")
-                            pending["content"] = updated
+                            if mode == "text":
+                                send_message(bot_token, chat_id, "✏️ Applico le modifiche, attendi...")
+                                updated = refine_content(pending["content"], text)
+                                updated["topic"] = pending.get("topic", "")
+                                pending["content"] = updated
+                            else:  # tema
+                                send_message(bot_token, chat_id, f"🔀 Genero un nuovo post su: _{text}_...")
+                                from generate_post import generate_content
+                                updated = generate_content(text)
+                                updated["topic"] = text
+                                updated["author"] = "Federico Borrasso"
+                                pending["content"] = updated
+                                pending["topic"] = text
                             with open("automation/pending_post.json", "w") as f:
                                 json.dump(pending, f, ensure_ascii=False, indent=2)
                             send_preview_to_telegram(bot_token, chat_id, pending)
                         except Exception as e:
                             print(f"[telegram_bot] Errore modifica: {e}")
-                            send_message(bot_token, chat_id, f"❌ Errore nella modifica: {e}")
+                            send_message(bot_token, chat_id, f"❌ Errore: {e}")
                     continue
 
             cb = update.get("callback_query")
@@ -355,11 +365,36 @@ def main():
                 handled = True
 
             elif data == "edit":
+                answer_callback(bot_token, cb["id"], "✏️ Cosa vuoi fare?")
+                edit_keyboard = {
+                    "inline_keyboard": [[
+                        {"text": "✏️ Modifica testo", "callback_data": "edit_text"},
+                        {"text": "🔀 Cambia tema", "callback_data": "edit_tema"},
+                    ]]
+                }
+                requests.post(
+                    f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                    json={
+                        "chat_id": chat_id,
+                        "text": "Cosa vuoi modificare?",
+                        "reply_markup": json.dumps(edit_keyboard),
+                    },
+                    timeout=10,
+                )
+
+            elif data == "edit_text":
                 answer_callback(bot_token, cb["id"], "✏️ Scrivi le modifiche...")
                 send_message(bot_token, chat_id,
-                    "✍️ Scrivi qui cosa vuoi cambiare nel post\n"
+                    "✍️ Scrivi cosa vuoi cambiare nel post\n"
                     "_(es: \"rendi il tono più diretto\" o \"rimuovi il punto 3\")_")
-                waiting_for_edit = True
+                waiting_for_edit = "text"
+
+            elif data == "edit_tema":
+                answer_callback(bot_token, cb["id"], "🔀 Scrivi il nuovo tema...")
+                send_message(bot_token, chat_id,
+                    "🔀 Scrivi il tema che vuoi per il post\n"
+                    "_(es: \"come investire in ETF\" o \"gestione del debito\")_")
+                waiting_for_edit = "tema"
 
             elif data == "regenerate":
                 answer_callback(bot_token, cb["id"], "🔄 Rigenero...")
