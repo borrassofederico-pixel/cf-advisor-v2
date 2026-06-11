@@ -334,6 +334,7 @@ def main():
                                 pending["topic"] = text
                             with open("automation/pending_post.json", "w") as f:
                                 json.dump(pending, f, ensure_ascii=False, indent=2)
+                            send_message(bot_token, chat_id, "✅ Modifiche applicate! Ecco il post aggiornato:")
                             send_preview_to_telegram(bot_token, chat_id, pending)
                         except Exception as e:
                             print(f"[telegram_bot] Errore modifica: {e}")
