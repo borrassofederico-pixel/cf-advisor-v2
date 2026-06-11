@@ -2,7 +2,7 @@ name: LinkedIn Daily Post
 
 on:
   schedule:
-    - cron: "30 7 * * 1-5"   # Lunedì–Venerdì 08:30 ora italiana (estate)
+    - cron: "30 7 * * 1,3,5"   # Lunedì, Mercoledì, Venerdì 08:30 ora italiana (estate)
   workflow_dispatch:
     inputs:
       topic:
@@ -14,7 +14,7 @@ jobs:
   generate-and-approve:
     name: Genera post e attendi approvazione
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 360
 
     steps:
       - name: Checkout repository
@@ -39,12 +39,13 @@ jobs:
           TOPIC_OVERRIDE: ${{ github.event.inputs.topic }}
         run: python automation/generate_post.py
 
-      - name: Attendi approvazione e pubblica (30 min)
+      - name: Attendi approvazione e pubblica
         env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           LINKEDIN_ACCESS_TOKEN: ${{ secrets.LINKEDIN_ACCESS_TOKEN }}
-          TELEGRAM_POLL_MINUTES: "30"
+          TELEGRAM_POLL_MINUTES: "300"
         run: python automation/telegram_bot.py
 
       - name: Salva storico post nel repository
