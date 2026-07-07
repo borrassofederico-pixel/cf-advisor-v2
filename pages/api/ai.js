@@ -1,10 +1,11 @@
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
-  const { system, prompt } = req.body;
+  const { system, prompt, maxTokens } = req.body;
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) return res.status(500).json({ error: 'GEMINI_API_KEY non configurata' });
   try {
     const fullPrompt = system ? `${system}\n\n${prompt}` : prompt;
+    const cappedMaxTokens = Math.min(Math.max(Number(maxTokens) || 1024, 1), 8192);
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
       {
@@ -12,7 +13,7 @@ export default async function handler(req, res) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{ parts: [{ text: fullPrompt }] }],
-          generationConfig: { temperature: 0.8, maxOutputTokens: 1024 }
+          generationConfig: { temperature: 0.8, maxOutputTokens: cappedMaxTokens }
         })
       }
     );

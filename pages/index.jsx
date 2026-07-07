@@ -2,6 +2,7 @@
 // Social posting via API reali (LinkedIn + Instagram)
 
 import { useState, useEffect } from 'react';
+import { CONTENT_SYSTEM_PROMPT, DAILY_THEMES, buildDailyPrompt, buildWeeklyPrompt } from '../lib/contentSystemPrompt';
 
 const C = {
   bg:'#05080f',bgAlt:'#0b1018',card:'#0f1621',cardH:'#141d2e',surface:'#161f30',
@@ -32,9 +33,9 @@ const PRODUCTS = [
 ];
 
 // ─── AI CALL ──────────────────────────────────────────────────────────────────
-async function ai(system, prompt) {
+async function ai(system, prompt, maxTokens) {
   try {
-    const r = await fetch('/api/ai', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({system,prompt}) });
+    const r = await fetch('/api/ai', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({system,prompt,maxTokens}) });
     const d = await r.json();
     return d.text || 'Nessuna risposta AI.';
   } catch { return 'Errore AI. Riprova.'; }
@@ -94,6 +95,87 @@ function ST({children,sub}) {
     <h2 style={{fontFamily:"'Playfair Display',serif",fontSize:26,fontWeight:900,color:C.goldL,lineHeight:1.1}}>{children}</h2>
     {sub&&<div style={{fontSize:12,color:C.muted,marginTop:4}}>{sub}</div>}
   </div>;
+}
+
+// ─── CONTENT STUDIO (redazione multi-agente Instagram) ───────────────────────
+function ContentStudio() {
+  const [mode, setMode] = useState('daily'); // 'daily' | 'weekly'
+  const [theme, setTheme] = useState('');
+  const [output, setOutput] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const generate = async (m) => {
+    setMode(m); setLoading(true); setOutput('');
+    const prompt = m === 'daily' ? buildDailyPrompt(theme) : buildWeeklyPrompt(theme);
+    const t = await ai(CONTENT_SYSTEM_PROMPT, prompt, m === 'daily' ? 4096 : 8192);
+    setOutput(t);
+    setLoading(false);
+  };
+
+  return (
+    <div style={{display:'grid',gridTemplateColumns:'320px 1fr',gap:20}}>
+      <Card>
+        <ST sub="Redazione multi-agente Instagram">Content Studio</ST>
+
+        <div style={{marginBottom:14}}>
+          <div style={{fontSize:10,color:C.muted,marginBottom:5,textTransform:'uppercase',letterSpacing:1}}>Tema (opzionale)</div>
+          <Input value={theme} onChange={setTheme} placeholder="Es: passaggio generazionale" multiline rows={2}/>
+          <div style={{display:'flex',gap:6,flexWrap:'wrap',marginTop:8}}>
+            {DAILY_THEMES.slice(0,6).map(t=>(
+              <button key={t} onClick={()=>setTheme(t)} style={{
+                background:C.bgAlt,border:`1px solid ${C.border}`,borderRadius:8,padding:'4px 10px',
+                color:C.textD,fontSize:10,cursor:'pointer'
+              }}>{t}</button>
+            ))}
+          </div>
+        </div>
+
+        <div style={{display:'flex',flexDirection:'column',gap:10,marginTop:20}}>
+          <Btn full onClick={()=>generate('daily')} disabled={loading} variant="primary">
+            {loading&&mode==='daily'?'Generazione…':'◈ Creami i contenuti di oggi'}
+          </Btn>
+          <Btn full onClick={()=>generate('weekly')} disabled={loading} variant="accent">
+            {loading&&mode==='weekly'?'Generazione…':'📅 Creami il piano settimanale'}
+          </Btn>
+        </div>
+        {loading&&<div style={{marginTop:12}}><Loading/></div>}
+
+        <div style={{marginTop:20,fontSize:11,color:C.muted,lineHeight:1.6}}>
+          Simula 14 agenti editoriali (direttore, growth strategist, copywriter, compliance checker, ecc.) e applica sempre le regole anti-fuffa e anti-promessa di rendimento prima di restituire il testo.
+        </div>
+      </Card>
+
+      <Card>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+          <div style={{fontWeight:700,color:C.goldL,fontSize:15}}>Output redazionale</div>
+          {output&&(
+            <button onClick={()=>navigator.clipboard.writeText(output)} style={{
+              background:'transparent',border:`1px solid ${C.border}`,borderRadius:8,
+              padding:'4px 10px',color:C.muted,fontSize:11,cursor:'pointer'
+            }}>📋 Copia</button>
+          )}
+        </div>
+
+        {!output&&!loading&&(
+          <div style={{textAlign:'center',padding:'60px 20px',color:C.muted,fontSize:13}}>
+            <div style={{fontSize:40,marginBottom:12}}>🗞️</div>
+            Scegli un tema (facoltativo) e genera i contenuti di oggi o il piano settimanale
+          </div>
+        )}
+
+        {output&&(
+          <div style={{
+            background:C.bgAlt,borderRadius:12,padding:16,fontSize:13,
+            lineHeight:1.75,color:C.text,whiteSpace:'pre-wrap',
+            minHeight:200,maxHeight:'70vh',overflowY:'auto',
+            border:`1px solid ${C.gold}33`
+          }}>
+            {output}
+          </div>
+        )}
+      </Card>
+    </div>
+  );
 }
 
 // ─── SOCIAL HUB (con posting reale) ──────────────────────────────────────────
@@ -520,6 +602,7 @@ function Leads({leads,setLeads}) {
 // ─── MAIN APP ─────────────────────────────────────────────────────────────────
 const TABS=[
   {id:'dashboard',icon:'◉',label:'Dashboard'},
+  {id:'content',icon:'🗞️',label:'Content Studio'},
   {id:'social',icon:'📣',label:'Social Hub'},
   {id:'leads',icon:'🎯',label:'Lead Tracker'},
   {id:'clients',icon:'👥',label:'CRM Clienti'},
@@ -545,6 +628,7 @@ export default function App() {
 
   const pages={
     dashboard:<Dashboard clients={clients} leads={leads}/>,
+    content:<ContentStudio/>,
     social:<SocialHub/>,
     leads:<Leads leads={leads} setLeads={setLeads}/>,
     clients:<CRM clients={clients} setClients={setClients}/>,
