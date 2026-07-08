@@ -170,6 +170,9 @@ def _upload_and_publish(slide_paths: list, caption: str,
 def publish_to_linkedin(pending: dict) -> str | None:
     access_token = os.environ.get("LINKEDIN_ACCESS_TOKEN", "")
     org_id = os.environ.get("LINKEDIN_ORG_ID", "").strip()
+    # Token dedicato alla pagina (app Community Management API).
+    # Se non impostato, usa lo stesso token del profilo.
+    org_token = os.environ.get("LINKEDIN_ORG_ACCESS_TOKEN", "").strip() or access_token
 
     if not access_token:
         print("[telegram_bot] LINKEDIN_ACCESS_TOKEN mancante")
@@ -193,7 +196,7 @@ def publish_to_linkedin(pending: dict) -> str | None:
             org_urn = f"urn:li:organization:{org_id}"
             try:
                 org_post_id = _upload_and_publish(
-                    slide_paths, content["caption"], access_token, org_urn)
+                    slide_paths, content["caption"], org_token, org_urn)
                 print(f"[telegram_bot] Post pagina pubblicato! ID: {org_post_id}")
             except Exception as org_err:
                 print(f"[telegram_bot] Errore pubblicazione pagina: {org_err}")
