@@ -148,8 +148,28 @@ def publish_ugc_post(caption: str, asset_urns: list[str],
     return resp.json().get("id", "unknown")
 
 
+def _upload_and_publish(slide_paths: list, caption: str,
+                        access_token: str, author_urn: str) -> str:
+    """Registra+carica le slide per un dato author e pubblica il ugcPost.
+    Gli asset LinkedIn sono legati all'owner: vanno ri-registrati per ogni author."""
+    asset_urns = []
+    for i, path in enumerate(slide_paths):
+        print(f"[telegram_bot] Upload slide {i+1}/{len(slide_paths)} per {author_urn}...")
+        upload_url, asset_urn = register_image(access_token, author_urn)
+        upload_image(upload_url, path, access_token)
+        asset_urns.append(asset_urn)
+    print(f"[telegram_bot] Pubblicazione post come {author_urn}...")
+    return publish_ugc_post(
+        caption=caption,
+        asset_urns=asset_urns,
+        access_token=access_token,
+        author_urn=author_urn,
+    )
+
+
 def publish_to_linkedin(pending: dict) -> str | None:
     access_token = os.environ.get("LINKEDIN_ACCESS_TOKEN", "")
+    org_id = os.environ.get("LINKEDIN_ORG_ID", "").strip()
 
     if not access_token:
         print("[telegram_bot] LINKEDIN_ACCESS_TOKEN mancante")
@@ -164,12 +184,19 @@ def publish_to_linkedin(pending: dict) -> str | None:
         slide_paths = save_slide_jpegs(content, out_dir="automation/publish_slides", size=1080)
         print(f"[telegram_bot] {len(slide_paths)} slide generate")
 
-        asset_urns = []
-        for i, path in enumerate(slide_paths):
-            print(f"[telegram_bot] Upload slide {i+1}/{len(slide_paths)}...")
-            upload_url, asset_urn = register_image(access_token, author_urn)
-            upload_image(upload_url, path, access_token)
-            asset_urns.append(asset_urn)
+        # 1) Pubblicazione sul profilo personale
+        post_id = _upload_and_publish(slide_paths, content["caption"], access_token, author_urn)
+        print(f"[telegram_bot] Post profilo pubblicato! ID: {post_id}")
+
+        # 2) Pubblicazione sulla pagina LinkedIn collegata (se configurata)
+        if org_id:
+            org_urn = f"urn:li:organization:{org_id}"
+            try:
+                org_post_id = _upload_and_publish(
+                    slide_paths, content["caption"], access_token, org_urn)
+                print(f"[telegram_bot] Post pagina pubblicato! ID: {org_post_id}")
+            except Exception as org_err:
+                print(f"[telegram_bot] Errore pubblicazione pagina: {org_err}")
 
         for p in slide_paths:
             Path(p).unlink(missing_ok=True)
@@ -180,14 +207,6 @@ def publish_to_linkedin(pending: dict) -> str | None:
             except OSError:
                 pass
 
-        print(f"[telegram_bot] Pubblicazione post con {len(asset_urns)} immagini...")
-        post_id = publish_ugc_post(
-            caption=content["caption"],
-            asset_urns=asset_urns,
-            access_token=access_token,
-            author_urn=author_urn,
-        )
-        print(f"[telegram_bot] Post pubblicato! ID: {post_id}")
         return post_id
 
     except Exception as e:

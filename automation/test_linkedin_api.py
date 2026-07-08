@@ -70,4 +70,16 @@ call("post", "https://api.linkedin.com/v2/ugcPosts",
          "visibility": {"com.linkedin.ugc.MemberNetworkVisibility": "CONNECTIONS"},
      })
 
+section("6. Pagine LinkedIn amministrate (per trovare LINKEDIN_ORG_ID)")
+# Richiede scope w_organization_social o rw_organization_admin
+r = call("get",
+         "https://api.linkedin.com/v2/organizationAcls?q=roleAssignee&role=ADMINISTRATOR&projection=(elements*(organization~(id,localizedName)))",
+         headers={**headers_base, "X-Restli-Protocol-Version": "2.0.0"})
+try:
+    for el in r.json().get("elements", []):
+        org = el.get("organization~", {})
+        print(f"  >>> Pagina: {org.get('localizedName')}  ID={org.get('id')}")
+except Exception:
+    pass
+
 section("FINE")
