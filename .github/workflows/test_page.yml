@@ -1,0 +1,27 @@
+name: Test Pagina LinkedIn
+
+# Parte da solo a ogni push che tocca il file trigger, così può essere
+# lanciato senza il permesso di workflow_dispatch.
+on:
+  push:
+    paths:
+      - "automation/.run_page_test"
+  workflow_dispatch:
+
+jobs:
+  test-page:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r automation/requirements.txt
+      - run: playwright install chromium --with-deps
+      - name: Pubblica sulla pagina
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          LINKEDIN_ORG_ACCESS_TOKEN: ${{ secrets.LINKEDIN_ORG_ACCESS_TOKEN }}
+          LINKEDIN_ORG_ID: "126484360"
+        run: python automation/publish_page_test.py
