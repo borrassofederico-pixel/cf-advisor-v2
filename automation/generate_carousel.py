@@ -12,18 +12,66 @@ W, H = 1080, 1080
 
 # ── Font Google ───────────────────────────────────────────────────────────────
 FONT_IMPORT = """
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;900&family=Inter:wght@300;400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;800;900&family=Inter:wght@300;400;500;600;700&display=swap');
 """
 
+# Grana sottile (texture) come overlay SVG in data-uri: dà profondità "premium".
+GRAIN = (
+    "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' "
+    "width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' "
+    "baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E"
+    "%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E\")"
+)
+
 # ── Stili base condivisi ──────────────────────────────────────────────────────
-BASE_STYLES = """
-* { margin: 0; padding: 0; box-sizing: border-box; }
-html, body {
+BASE_STYLES = f"""
+* {{ margin: 0; padding: 0; box-sizing: border-box; }}
+html, body {{
   width: 1080px; height: 1080px; overflow: hidden;
-  background: #07121E;
+  background: #060F1A;
   font-family: 'Inter', system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
-}
+  text-rendering: optimizeLegibility;
+}}
+/* Elementi comuni a tutte le slide */
+.slide {{
+  width: 1080px; height: 1080px;
+  position: relative; overflow: hidden;
+  background:
+    radial-gradient(1200px 700px at 12% 8%, rgba(201,168,76,0.10), transparent 55%),
+    radial-gradient(900px 900px at 92% 100%, rgba(28,58,94,0.55), transparent 60%),
+    linear-gradient(150deg, #060F1A 0%, #0C1F35 58%, #060E19 100%);
+}}
+.grain {{
+  position: absolute; inset: 0;
+  background-image: {GRAIN};
+  background-size: 300px 300px;
+  opacity: 0.06; mix-blend-mode: overlay;
+  pointer-events: none;
+}}
+.vignette {{
+  position: absolute; inset: 0;
+  box-shadow: inset 0 0 220px rgba(0,0,0,0.55);
+  pointer-events: none;
+}}
+.edge {{
+  position: absolute; left: 0; top: 0;
+  width: 4px; height: 100%;
+  background: linear-gradient(to bottom, #C9A84C, #EBD07A 45%, #C9A84C);
+}}
+.corner {{
+  position: absolute; width: 54px; height: 54px;
+  border-color: rgba(201,168,76,0.55); pointer-events: none;
+}}
+.corner.tr {{ right: 40px; top: 40px; border-top: 2px solid; border-right: 2px solid; }}
+.corner.bl {{ left: 40px; bottom: 40px; border-bottom: 2px solid; border-left: 2px solid; }}
+.brand {{
+  position: absolute; right: 44px; bottom: 40px;
+  font-family: 'Inter', sans-serif;
+  font-size: 17px; font-weight: 700;
+  letter-spacing: 3px;
+  color: rgba(201,168,76,0.60);
+}}
 """
 
 def _html_page(body_html: str, extra_styles: str = "") -> str:
@@ -44,89 +92,63 @@ def _html_page(body_html: str, extra_styles: str = "") -> str:
 def html_cover(title: str, topic: str) -> str:
     return _html_page(f"""
 <div class="slide">
-  <div class="gold-bar"></div>
+  <div class="edge"></div>
+  <span class="corner tr"></span>
   <div class="content">
-    <div class="tag">{topic.upper()}</div>
+    <div class="eyebrow">
+      <span class="eyebrow-line"></span>
+      <span class="eyebrow-text">{topic.upper()}</span>
+    </div>
     <h1 class="title">{title}</h1>
-    <div class="divider"></div>
-    <p class="hint">Scorri per scoprire &rarr;</p>
+    <div class="rule"></div>
   </div>
-  <div class="deco-circles">
-    <div class="circle c1"></div>
-    <div class="circle c2"></div>
-    <div class="circle c3"></div>
+  <div class="read-hint">
+    <span class="rh-text">SCORRI</span>
+    <span class="rh-arrow">&rarr;</span>
   </div>
   <div class="brand">FB</div>
+  <div class="grain"></div>
+  <div class="vignette"></div>
 </div>
 """, """
-.slide {
-  width: 1080px; height: 1080px;
-  background: linear-gradient(145deg, #07121E 0%, #0D1F35 60%, #071220 100%);
-  position: relative; overflow: hidden;
-}
-.gold-bar {
-  position: absolute; left: 0; top: 0;
-  width: 5px; height: 100%;
-  background: linear-gradient(to bottom, #C9A84C, #E8C96A, #C9A84C);
-}
 .content {
   position: absolute;
-  left: 80px; top: 0; right: 80px; bottom: 0;
+  left: 96px; right: 96px; top: 0; bottom: 0;
   display: flex; flex-direction: column; justify-content: center;
-  gap: 0;
 }
-.tag {
-  display: inline-block;
-  border: 1px solid #C9A84C;
-  color: #C9A84C;
+.eyebrow { display: flex; align-items: center; gap: 18px; margin-bottom: 46px; }
+.eyebrow-line {
+  width: 46px; height: 2px;
+  background: linear-gradient(to right, #C9A84C, #EBD07A);
+}
+.eyebrow-text {
   font-family: 'Inter', sans-serif;
-  font-size: 20px; font-weight: 500;
-  letter-spacing: 2.5px;
-  padding: 8px 20px;
-  border-radius: 3px;
-  margin-bottom: 44px;
-  width: fit-content;
+  font-size: 21px; font-weight: 600;
+  letter-spacing: 4px; color: #D9B85E;
 }
 .title {
   font-family: 'Playfair Display', serif;
-  font-size: 82px; font-weight: 900;
-  line-height: 1.1;
-  color: #FFFFFF;
-  letter-spacing: -1px;
-  margin-bottom: 40px;
+  font-size: 88px; font-weight: 800;
+  line-height: 1.08; color: #FFFFFF;
+  letter-spacing: -1.5px;
+  text-shadow: 0 2px 30px rgba(0,0,0,0.4);
 }
-.divider {
-  width: 80px; height: 3px;
-  background: linear-gradient(to right, #C9A84C, #E8C96A);
-  border-radius: 2px;
-  margin-bottom: 36px;
+.rule {
+  margin-top: 46px;
+  width: 96px; height: 4px; border-radius: 2px;
+  background: linear-gradient(to right, #C9A84C, #EBD07A);
+  box-shadow: 0 0 24px rgba(201,168,76,0.4);
 }
-.hint {
+.read-hint {
+  position: absolute; left: 96px; bottom: 70px;
+  display: flex; align-items: center; gap: 12px;
+}
+.rh-text {
   font-family: 'Inter', sans-serif;
-  font-size: 22px; font-weight: 400;
-  color: #7A8FA6;
-  letter-spacing: 0.5px;
+  font-size: 19px; font-weight: 600;
+  letter-spacing: 3px; color: #6F8AA6;
 }
-.deco-circles {
-  position: absolute;
-  right: -60px; bottom: -60px;
-}
-.circle {
-  position: absolute;
-  border-radius: 50%;
-  border: 1px solid rgba(201, 168, 76, 0.18);
-  transform: translate(-50%, -50%);
-}
-.c1 { width: 420px; height: 420px; }
-.c2 { width: 290px; height: 290px; border-color: rgba(201, 168, 76, 0.28); }
-.c3 { width: 160px; height: 160px; border-color: rgba(201, 168, 76, 0.40); }
-.brand {
-  position: absolute; right: 36px; bottom: 32px;
-  font-family: 'Inter', sans-serif;
-  font-size: 18px; font-weight: 600;
-  letter-spacing: 2px;
-  color: rgba(201, 168, 76, 0.55);
-}
+.rh-arrow { color: #C9A84C; font-size: 24px; }
 """)
 
 
@@ -136,104 +158,89 @@ def html_point(number: int, headline: str, body: str,
         f'<div class="dot {"active" if i == slide_idx else ""}"></div>'
         for i in range(total)
     )
+    counter = f"{number:02d}<span class='c-sep'>/</span>{total:02d}"
     return _html_page(f"""
 <div class="slide">
-  <div class="gold-bar"></div>
-  <div class="num-bg">{number}</div>
+  <div class="edge"></div>
+  <div class="num-bg">{number:02d}</div>
   <div class="content">
-    <div class="badge">{number}</div>
+    <div class="top-row">
+      <div class="badge">{number:02d}</div>
+      <div class="counter">{counter}</div>
+    </div>
     <h2 class="headline">{headline}</h2>
     <div class="sep"><span class="sep-line"></span><span class="sep-dot"></span></div>
     <p class="body-text">{body}</p>
   </div>
   <div class="progress">{dots_html}</div>
   <div class="brand">FB</div>
+  <div class="grain"></div>
+  <div class="vignette"></div>
 </div>
 """, """
-.slide {
-  width: 1080px; height: 1080px;
-  background: linear-gradient(145deg, #07121E 0%, #0D1F35 60%, #071220 100%);
-  position: relative; overflow: hidden;
-}
-.gold-bar {
-  position: absolute; left: 0; top: 0;
-  width: 5px; height: 100%;
-  background: linear-gradient(to bottom, #C9A84C, #E8C96A, #C9A84C);
-}
 .num-bg {
   position: absolute;
-  right: -20px; top: 50%; transform: translateY(-55%);
+  right: -40px; top: 50%; transform: translateY(-52%);
   font-family: 'Playfair Display', serif;
-  font-size: 380px; font-weight: 900;
-  color: rgba(255,255,255,0.035);
-  line-height: 1; user-select: none;
-  pointer-events: none;
+  font-size: 460px; font-weight: 900;
+  color: rgba(201,168,76,0.045);
+  line-height: 1; user-select: none; pointer-events: none;
 }
 .content {
   position: absolute;
-  left: 90px; top: 0; right: 90px; bottom: 80px;
+  left: 100px; right: 100px; top: 0; bottom: 96px;
   display: flex; flex-direction: column; justify-content: center;
 }
+.top-row {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 44px;
+}
 .badge {
-  width: 68px; height: 68px;
-  border: 2px solid #C9A84C;
-  border-radius: 50%;
+  width: 74px; height: 74px;
+  border: 2px solid #C9A84C; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
   font-family: 'Playfair Display', serif;
-  font-size: 30px; font-weight: 700;
-  color: #C9A84C;
-  margin-bottom: 40px;
+  font-size: 30px; font-weight: 700; color: #EBD07A;
+  box-shadow: 0 0 30px rgba(201,168,76,0.18);
   flex-shrink: 0;
 }
+.counter {
+  font-family: 'Inter', sans-serif;
+  font-size: 22px; font-weight: 600;
+  letter-spacing: 2px; color: #6F8AA6;
+}
+.counter .c-sep { color: #C9A84C; margin: 0 4px; }
 .headline {
   font-family: 'Playfair Display', serif;
-  font-size: 68px; font-weight: 700;
-  line-height: 1.15;
-  color: #FFFFFF;
+  font-size: 70px; font-weight: 700;
+  line-height: 1.13; color: #FFFFFF;
   letter-spacing: -0.5px;
-  margin-bottom: 36px;
 }
-.sep {
-  display: flex; align-items: center;
-  gap: 10px; margin-bottom: 36px;
-}
+.sep { display: flex; align-items: center; gap: 10px; margin: 34px 0; }
 .sep-line {
-  display: block; width: 64px; height: 2px;
-  background: linear-gradient(to right, #C9A84C, #E8C96A);
-  border-radius: 1px;
+  display: block; width: 68px; height: 2px;
+  background: linear-gradient(to right, #C9A84C, #EBD07A);
 }
-.sep-dot {
-  display: block; width: 8px; height: 8px;
-  border-radius: 50%; background: #C9A84C;
-}
+.sep-dot { display: block; width: 8px; height: 8px; border-radius: 50%; background: #C9A84C; }
 .body-text {
   font-family: 'Inter', sans-serif;
-  font-size: 34px; font-weight: 400;
-  line-height: 1.65;
-  color: #C8D5E0;
+  font-size: 35px; font-weight: 400;
+  line-height: 1.62; color: #CBD8E4;
   letter-spacing: 0.2px;
 }
 .progress {
-  position: absolute; bottom: 36px; left: 50%;
+  position: absolute; bottom: 44px; left: 50%;
   transform: translateX(-50%);
-  display: flex; gap: 14px; align-items: center;
+  display: flex; gap: 13px; align-items: center;
 }
 .dot {
   width: 8px; height: 8px; border-radius: 50%;
-  border: 1.5px solid #3A5068;
-  background: transparent;
-  transition: all 0.3s;
+  border: 1.5px solid #3A5068; background: transparent;
 }
 .dot.active {
   background: #C9A84C; border-color: #C9A84C;
-  width: 28px; border-radius: 4px;
-}
-.brand {
-  position: absolute; right: 36px; bottom: 32px;
-  font-family: 'Inter', sans-serif;
-  font-size: 18px; font-weight: 600;
-  letter-spacing: 2px;
-  color: rgba(201, 168, 76, 0.55);
+  width: 30px; border-radius: 4px;
+  box-shadow: 0 0 14px rgba(201,168,76,0.5);
 }
 """)
 
@@ -241,97 +248,71 @@ def html_point(number: int, headline: str, body: str,
 def html_cta(author_name: str) -> str:
     initials = "".join(w[0] for w in author_name.split()[:2]).upper()
     return _html_page(f"""
-<div class="slide">
-  <div class="gold-bar"></div>
+<div class="slide cta">
+  <div class="edge"></div>
+  <span class="corner tr"></span>
+  <span class="corner bl"></span>
   <div class="content">
-    <div class="avatar">
-      <div class="avatar-inner">{initials}</div>
-    </div>
+    <div class="avatar"><div class="avatar-inner">{initials}</div></div>
     <div class="name">{author_name}</div>
-    <div class="role">Consulente Finanziario</div>
+    <div class="role">CONSULENTE FINANZIARIO</div>
     <div class="divider"></div>
-    <div class="cta-title">Ti è stato utile?</div>
+    <div class="cta-title">Ti &egrave; stato utile?</div>
     <div class="actions">
-      <div class="action"><span class="bullet"></span>Commenta la tua esperienza</div>
-      <div class="action"><span class="bullet"></span>Condividi con chi ne ha bisogno</div>
-      <div class="action"><span class="bullet"></span>Seguimi per altri contenuti</div>
+      <div class="action"><span class="ic">&#9670;</span>Salva il post per rileggerlo</div>
+      <div class="action"><span class="ic">&#9670;</span>Condividi con chi ne ha bisogno</div>
+      <div class="action"><span class="ic">&#9670;</span>Seguimi per altri contenuti</div>
     </div>
   </div>
   <div class="brand">FB</div>
+  <div class="grain"></div>
+  <div class="vignette"></div>
 </div>
 """, """
-.slide {
-  width: 1080px; height: 1080px;
-  background: linear-gradient(145deg, #07121E 0%, #0D1F35 60%, #071220 100%);
-  position: relative; overflow: hidden;
-  display: flex; align-items: center; justify-content: center;
-}
-.gold-bar {
-  position: absolute; left: 0; top: 0;
-  width: 5px; height: 100%;
-  background: linear-gradient(to bottom, #C9A84C, #E8C96A, #C9A84C);
-}
+.cta { display: flex; align-items: center; justify-content: center; }
 .content {
-  display: flex; flex-direction: column;
-  align-items: center; gap: 0;
-  text-align: center;
-  padding: 0 80px;
+  display: flex; flex-direction: column; align-items: center;
+  text-align: center; padding: 0 90px;
 }
 .avatar {
-  width: 130px; height: 130px; border-radius: 50%;
+  width: 138px; height: 138px; border-radius: 50%;
   border: 2px solid #C9A84C;
   display: flex; align-items: center; justify-content: center;
-  margin-bottom: 32px;
-  background: rgba(201, 168, 76, 0.06);
-  box-shadow: 0 0 40px rgba(201, 168, 76, 0.12);
+  margin-bottom: 34px;
+  background: rgba(201,168,76,0.06);
+  box-shadow: 0 0 50px rgba(201,168,76,0.16);
 }
 .avatar-inner {
   font-family: 'Playfair Display', serif;
-  font-size: 48px; font-weight: 700;
-  color: #C9A84C;
+  font-size: 52px; font-weight: 700; color: #EBD07A;
 }
 .name {
   font-family: 'Playfair Display', serif;
-  font-size: 46px; font-weight: 700;
-  color: #FFFFFF; margin-bottom: 12px;
+  font-size: 50px; font-weight: 700; color: #FFFFFF;
+  margin-bottom: 12px;
 }
 .role {
   font-family: 'Inter', sans-serif;
-  font-size: 24px; font-weight: 400;
-  color: #C9A84C; letter-spacing: 0.3px;
-  margin-bottom: 36px;
+  font-size: 21px; font-weight: 600;
+  letter-spacing: 4px; color: #D9B85E;
+  margin-bottom: 38px;
 }
 .divider {
-  width: 60px; height: 2px;
+  width: 70px; height: 2px; margin-bottom: 38px;
   background: linear-gradient(to right, transparent, #C9A84C, transparent);
-  margin-bottom: 36px;
 }
 .cta-title {
   font-family: 'Playfair Display', serif;
-  font-size: 40px; font-weight: 700;
-  color: #FFFFFF; margin-bottom: 32px;
+  font-size: 44px; font-weight: 700; color: #FFFFFF;
+  margin-bottom: 36px;
 }
-.actions {
-  display: flex; flex-direction: column; gap: 20px;
-  align-items: flex-start;
-}
+.actions { display: flex; flex-direction: column; gap: 22px; align-items: flex-start; }
 .action {
-  display: flex; align-items: center; gap: 16px;
+  display: flex; align-items: center; gap: 18px;
   font-family: 'Inter', sans-serif;
-  font-size: 28px; font-weight: 400;
-  color: #7A8FA6;
+  font-size: 29px; font-weight: 400; color: #B9C7D6;
 }
-.bullet {
-  width: 8px; height: 8px; border-radius: 50%;
-  background: #C9A84C; flex-shrink: 0;
-}
-.brand {
-  position: absolute; right: 36px; bottom: 32px;
-  font-family: 'Inter', sans-serif;
-  font-size: 18px; font-weight: 600;
-  letter-spacing: 2px;
-  color: rgba(201, 168, 76, 0.55);
-}
+.ic { color: #C9A84C; font-size: 16px; flex-shrink: 0; }
 """)
 
 
