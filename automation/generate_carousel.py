@@ -250,6 +250,75 @@ def html_cta(author_name: str, theme: dict) -> str:
 """)
 
 
+def html_single(eyebrow: str, headline: str, question: str, theme: dict,
+                author_name: str = "Federico Borrasso") -> str:
+    """Creatività a immagine singola stile annuncio (per post organico o LinkedIn Ads).
+    headline = affermazione forte (con numero); question = la domanda sotto."""
+    initials = "".join(w[0] for w in author_name.split()[:2]).upper()
+    # Motivo classico (colonnato + arco + sole) in line-art, evoca l'aspirazionale
+    motif = """
+<svg class="motif" viewBox="0 0 1080 320" xmlns="http://www.w3.org/2000/svg">
+  <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0" stop-color="var(--accent-lt)"/><stop offset="1" stop-color="var(--accent)"/>
+  </linearGradient></defs>
+  <g fill="none" stroke="url(#g)" stroke-width="2.5" opacity="0.55">
+    <circle cx="540" cy="150" r="70"/>
+    <path d="M300 300 V150 a40 40 0 0 1 80 0 V300"/>
+    <path d="M420 300 V130 a40 40 0 0 1 80 0 V300"/>
+    <path d="M580 300 V130 a40 40 0 0 1 80 0 V300"/>
+    <path d="M700 300 V150 a40 40 0 0 1 80 0 V300"/>
+    <line x1="270" y1="300" x2="810" y2="300"/>
+    <line x1="285" y1="286" x2="795" y2="286"/>
+  </g>
+</svg>
+"""
+    return _html_page(f"""
+<div class="slide single">
+  <div class="edge"></div>
+  <span class="corner tr"></span>
+  <div class="head">
+    <div class="mono">{initials}</div>
+    <div class="who">{author_name.upper()}<span class="who-sub">CONSULENTE FINANZIARIO</span></div>
+  </div>
+  <div class="content">
+    <div class="eyebrow"><span class="eyebrow-line"></span><span class="eyebrow-text">{eyebrow.upper()}</span></div>
+    <div class="headline">{headline}</div>
+    <div class="question">{question}</div>
+  </div>
+  {motif}
+  <div class="grain"></div>
+  <div class="vignette"></div>
+</div>
+""", theme, """
+.single .head { position: absolute; top: 70px; left: 96px; display: flex; align-items: center; gap: 20px; }
+.mono { width: 66px; height: 66px; border-radius: 50%; border: 2px solid var(--accent);
+  display: flex; align-items: center; justify-content: center; font-family: 'Fraunces', serif;
+  font-size: 26px; font-weight: 700; color: var(--accent-lt); }
+.who { display: flex; flex-direction: column; font-size: 22px; font-weight: 700; letter-spacing: 1.5px; color: var(--ink); }
+.who-sub { font-size: 14px; font-weight: 600; letter-spacing: 3px; color: var(--accent-lt); margin-top: 4px; }
+.single .content { position: absolute; left: 96px; right: 96px; top: 300px; }
+.single .eyebrow { display: flex; align-items: center; gap: 16px; margin-bottom: 34px; }
+.single .eyebrow-line { width: 44px; height: 2px; background: linear-gradient(to right, var(--accent), var(--accent-lt)); }
+.single .eyebrow-text { font-size: 20px; font-weight: 600; letter-spacing: 4px; color: var(--accent-lt); }
+.headline { font-family: 'Fraunces', serif; font-size: 104px; font-weight: 900; line-height: 1.0;
+  color: var(--accent-lt); letter-spacing: -2px; text-shadow: 0 2px 30px rgba(0,0,0,0.45); }
+.question { margin-top: 26px; font-family: 'Fraunces', serif; font-size: 52px; font-weight: 600;
+  font-style: italic; line-height: 1.15; color: var(--ink); }
+.motif { position: absolute; left: 0; right: 0; bottom: 46px; width: 1080px; height: 320px; }
+""")
+
+
+def save_single_image(headline: str, question: str, eyebrow: str,
+                      out_path: str = "automation/single_ad.jpg",
+                      theme_name: str = "oro",
+                      author_name: str = "Federico Borrasso") -> str:
+    """Renderizza una creatività a immagine singola in JPEG 1080x1080."""
+    theme = THEMES.get(theme_name, THEMES["oro"])
+    html = html_single(eyebrow, headline, question, theme, author_name)
+    render_html_to_jpeg(html, out_path)
+    return out_path
+
+
 def render_html_to_jpeg(html: str, output_path: str) -> None:
     with sync_playwright() as p:
         browser = p.chromium.launch()
