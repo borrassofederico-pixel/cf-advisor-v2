@@ -217,126 +217,63 @@ def publish_to_linkedin(pending: dict) -> str | None:
         return None
 
 
-SYSTEM_PROMPT = """Sei un consulente finanziario italiano esperto. Crei contenuti LinkedIn
-sotto forma di carosello: ogni slide ha un titolo breve e un testo esplicativo.
-
-Rispondi SOLO con un JSON valido (nessun testo prima o dopo), con questa struttura:
-{
-  "title": "Titolo della slide di copertina (max 8 parole, incisivo)",
-  "caption": "Testo del post LinkedIn che accompagna il carosello (100-150 parole, hook forte, CTA finale, 3-4 hashtag pertinenti)",
-  "points": [
-    {"headline": "Titolo punto 1 (max 5 parole)", "body": "Spiegazione (max 30 parole, concreta e utile)"},
-    {"headline": "Titolo punto 2 (max 5 parole)", "body": "Spiegazione (max 30 parole, concreta e utile)"},
-    {"headline": "Titolo punto 3 (max 5 parole)", "body": "Spiegazione (max 30 parole, concreta e utile)"},
-    {"headline": "Titolo punto 4 (max 5 parole)", "body": "Spiegazione (max 30 parole, concreta e utile)"}
-  ]
-}
-
-Regole:
-- Tono professionale ma accessibile
-- NON promettere rendimenti specifici
-- Italiano corretto, zero gergo inutile
-- I titoli dei punti devono essere autonomi e leggibili anche senza il body"""
-
-
 def _generate_content(topic: str) -> dict:
-    """Genera contenuto ex-novo per un dato tema."""
-    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
-    msg = client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=800,
-        system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": f"Tema del carosello: {topic}"}],
-    )
-    raw = msg.content[0].text.strip()
-    if raw.startswith("```"):
-        raw = raw.split("```")[1]
-        if raw.startswith("json"):
-            raw = raw[4:]
-    return json.loads(raw.strip())
+    """Genera un nuovo post per un tema scelto (delega a generate_post)."""
+    from generate_post import generate_content
+    return generate_content(topic_override=topic)
 
 
 def refine_content(existing: dict, feedback: str) -> dict:
-    """Chiama Claude per applicare le modifiche richieste al contenuto esistente."""
+    """Applica una modifica al post esistente mantenendo lo schema (testo + carosello).
+    Usa la ricerca web se la modifica tocca un dato."""
+    from generate_post import SYSTEM_PROMPT
     client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+    current = {
+        "testo": existing.get("caption", ""),
+        "carosello": {
+            "title": existing.get("title", ""),
+            "kicker": existing.get("kicker", ""),
+            "topic": existing.get("topic", ""),
+            "points": existing.get("points", []),
+        },
+        "formato": existing.get("formato", ""),
+        "pilastro": existing.get("pilastro", ""),
+    }
     user_msg = (
-        f"Contenuto attuale:\n{json.dumps(existing, ensure_ascii=False, indent=2)}\n\n"
+        f"Post attuale:\n{json.dumps(current, ensure_ascii=False, indent=2)}\n\n"
         f"Modifica richiesta: {feedback}\n\n"
-        "Restituisci il JSON completo aggiornato con le modifiche applicate."
+        "Applica la modifica. Se tocca un dato, verificalo con la ricerca web. "
+        "Restituisci SOLO il JSON completo aggiornato, stesso schema."
     )
     msg = client.messages.create(
         model="claude-sonnet-4-6",
-        max_tokens=800,
+        max_tokens=2000,
         system=SYSTEM_PROMPT,
+        tools=[{"type": "web_search_20250305", "name": "web_search", "max_uses": 5}],
         messages=[{"role": "user", "content": user_msg}],
     )
-    raw = msg.content[0].text.strip()
-    if raw.startswith("```"):
-        raw = raw.split("```")[1]
-        if raw.startswith("json"):
-            raw = raw[4:]
-    return json.loads(raw.strip())
-
-
-def _send_slides_to_telegram(bot_token: str, chat_id: str, slide_paths: list, caption: str) -> None:
-    import json as _json
-    from pathlib import Path as _Path
-    media = []
-    files = {}
-    for i, path in enumerate(slide_paths[:10]):
-        key = f"photo{i}"
-        media.append({"type": "photo", "media": f"attach://{key}",
-                      "caption": caption if i == 0 else "", "parse_mode": "Markdown"})
-        files[key] = (_Path(path).name, open(path, "rb"), "image/jpeg")
-    resp = requests.post(
-        f"https://api.telegram.org/bot{bot_token}/sendMediaGroup",
-        data={"chat_id": chat_id, "media": _json.dumps(media)},
-        files=files, timeout=60,
-    )
-    for _, (_, f, _) in files.items():
-        f.close()
-    resp.raise_for_status()
+    from generate_post import _extract_json
+    text = "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
+    data = _extract_json(text)
+    car = data.get("carosello", {})
+    return {
+        "title": car.get("title", existing.get("title", "")),
+        "kicker": car.get("kicker", existing.get("kicker", "")),
+        "topic": car.get("topic", existing.get("topic", "")),
+        "points": car.get("points", existing.get("points", [])),
+        "caption": data.get("testo", existing.get("caption", "")),
+        "author": "Federico Borrasso",
+        "formato": data.get("formato", existing.get("formato", "")),
+        "pilastro": data.get("pilastro", existing.get("pilastro", "")),
+        "fonti": data.get("fonti", existing.get("fonti", [])),
+        "verifica": data.get("verifica", existing.get("verifica", "")),
+    }
 
 
 def send_preview_to_telegram(bot_token: str, chat_id: str, pending: dict) -> None:
-    """Ri-invia l'anteprima slide + bottoni di approvazione su Telegram."""
-    content = pending["content"]
-    topic = pending.get("topic", "")
-
-    slide_paths = save_slide_jpegs(content, size=800)
-    album_caption = f"🎠 *{content['title']}*\n🏷️ _{topic}_"
-    _send_slides_to_telegram(bot_token, chat_id, slide_paths, album_caption)
-    for p in slide_paths:
-        Path(p).unlink(missing_ok=True)
-    preview_dir = Path("automation/preview_slides")
-    if preview_dir.exists():
-        try:
-            preview_dir.rmdir()
-        except OSError:
-            pass
-
-    approval_text = (
-        f"📝 *Caption del post:*\n{content['caption']}\n\n"
-        f"Approvi la pubblicazione su LinkedIn?"
-    )
-    keyboard = {
-        "inline_keyboard": [[
-            {"text": "✅ Pubblica", "callback_data": "approve"},
-            {"text": "✏️ Modifica", "callback_data": "edit"},
-            {"text": "🔄 Rigenera", "callback_data": "regenerate"},
-            {"text": "❌ Salta oggi", "callback_data": "skip"},
-        ]]
-    }
-    requests.post(
-        f"https://api.telegram.org/bot{bot_token}/sendMessage",
-        json={
-            "chat_id": chat_id,
-            "text": approval_text,
-            "parse_mode": "Markdown",
-            "reply_markup": json.dumps(keyboard),
-        },
-        timeout=10,
-    )
+    """Ri-invia l'anteprima (slide + testo + fonti + bottoni) — riusa generate_post."""
+    from generate_post import send_to_telegram
+    send_to_telegram(pending["content"])
 
 
 def load_pending() -> dict | None:
@@ -401,18 +338,14 @@ def main():
                             if mode == "text":
                                 send_message(bot_token, chat_id, "✏️ Applico le modifiche, attendi...")
                                 updated = refine_content(pending["content"], text)
-                                updated["topic"] = pending.get("topic", "")
-                                pending["content"] = updated
                             else:  # tema
                                 send_message(bot_token, chat_id, f"🔀 Genero un nuovo post su: _{text}_...")
                                 updated = _generate_content(text)
-                                updated["topic"] = text
-                                updated["author"] = "Federico Borrasso"
-                                pending["content"] = updated
-                                pending["topic"] = text
+                            pending["content"] = updated
+                            pending["topic"] = updated.get("topic", "")
                             with open("automation/pending_post.json", "w") as f:
                                 json.dump(pending, f, ensure_ascii=False, indent=2)
-                            send_message(bot_token, chat_id, "✅ Modifiche applicate! Ecco il post aggiornato:")
+                            send_message(bot_token, chat_id, "✅ Fatto! Ecco il post aggiornato:")
                             send_preview_to_telegram(bot_token, chat_id, pending)
                         except Exception as e:
                             print(f"[telegram_bot] Errore modifica: {e}")

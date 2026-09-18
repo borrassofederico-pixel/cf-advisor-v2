@@ -2,7 +2,7 @@ name: LinkedIn Daily Post
 
 on:
   schedule:
-    - cron: "30 7 * * 1,3,5"   # Lunedì, Mercoledì, Venerdì 08:30 ora italiana (estate)
+    - cron: "30 7 * * 1,4"   # Lunedì e Giovedì 08:30 ora italiana (estate)
   workflow_dispatch:
     inputs:
       topic:

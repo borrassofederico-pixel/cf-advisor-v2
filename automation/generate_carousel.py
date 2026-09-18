@@ -1,10 +1,14 @@
 """
 Genera slide del carosello LinkedIn come immagini 1080x1080
 usando HTML/CSS renderizzato via Playwright (headless Chromium).
+
+Design: impronta "private banking" con rotazione di palette (mood diverso a
+ogni post, stesso linguaggio visivo) per non avere post sempre identici.
 """
 
 import os
 import json
+import hashlib
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 
@@ -12,10 +16,26 @@ W, H = 1080, 1080
 
 # ── Font Google ───────────────────────────────────────────────────────────────
 FONT_IMPORT = """
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;800;900&family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700;9..144,900&family=Inter:wght@300;400;500;600;700&display=swap');
 """
 
-# Grana sottile (texture) come overlay SVG in data-uri: dà profondità "premium".
+# ── Palette a rotazione ───────────────────────────────────────────────────────
+# Ogni tema: sfondo (3 stop), accento, accento chiaro, glow. Impronta coerente,
+# mood diverso. Il tema è scelto in modo deterministico dall'hash del topic.
+THEMES = {
+    "oro":     {"bg1": "#070F1A", "bg2": "#0C2036", "bg3": "#060D18",
+                "accent": "#C9A24C", "accentLt": "#EBD07A", "glow": "rgba(201,162,76,0.12)"},
+    "foresta": {"bg1": "#07130F", "bg2": "#0C2A20", "bg3": "#06120E",
+                "accent": "#57B08A", "accentLt": "#A6E6C6", "glow": "rgba(87,176,138,0.14)"},
+    "zaffiro": {"bg1": "#080C1C", "bg2": "#122246", "bg3": "#070A16",
+                "accent": "#7C96E8", "accentLt": "#BFCEFB", "glow": "rgba(124,150,232,0.14)"},
+    "porpora": {"bg1": "#140813", "bg2": "#2C1030", "bg3": "#110711",
+                "accent": "#C58AD0", "accentLt": "#E9C4F0", "glow": "rgba(197,138,208,0.14)"},
+    "rame":    {"bg1": "#160C08", "bg2": "#301A10", "bg3": "#120A06",
+                "accent": "#D68C5C", "accentLt": "#F0BE9E", "glow": "rgba(214,140,92,0.14)"},
+}
+
+# Grana sottile (texture) come overlay SVG in data-uri.
 GRAIN = (
     "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' "
     "width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' "
@@ -23,64 +43,78 @@ GRAIN = (
     "%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E\")"
 )
 
+
+def pick_theme(content: dict) -> dict:
+    """Sceglie una palette in modo deterministico dal topic (stesso topic → stesso mood)."""
+    override = content.get("theme")
+    if override in THEMES:
+        return THEMES[override]
+    seed = (content.get("topic", "") + content.get("title", "")).encode("utf-8")
+    idx = int(hashlib.md5(seed).hexdigest(), 16) % len(THEMES)
+    return list(THEMES.values())[idx]
+
+
+def _theme_css(t: dict) -> str:
+    return f"""
+:root {{
+  --bg1: {t['bg1']}; --bg2: {t['bg2']}; --bg3: {t['bg3']};
+  --accent: {t['accent']}; --accent-lt: {t['accentLt']}; --glow: {t['glow']};
+  --ink: #FFFFFF; --body: #CBD8E4; --muted: #6F8AA6;
+}}
+"""
+
 # ── Stili base condivisi ──────────────────────────────────────────────────────
 BASE_STYLES = f"""
 * {{ margin: 0; padding: 0; box-sizing: border-box; }}
 html, body {{
   width: 1080px; height: 1080px; overflow: hidden;
-  background: #060F1A;
+  background: var(--bg1);
   font-family: 'Inter', system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }}
-/* Elementi comuni a tutte le slide */
 .slide {{
   width: 1080px; height: 1080px;
   position: relative; overflow: hidden;
   background:
-    radial-gradient(1200px 700px at 12% 8%, rgba(201,168,76,0.10), transparent 55%),
-    radial-gradient(900px 900px at 92% 100%, rgba(28,58,94,0.55), transparent 60%),
-    linear-gradient(150deg, #060F1A 0%, #0C1F35 58%, #060E19 100%);
+    radial-gradient(1200px 720px at 12% 6%, var(--glow), transparent 55%),
+    radial-gradient(900px 900px at 92% 102%, rgba(255,255,255,0.04), transparent 60%),
+    linear-gradient(150deg, var(--bg1) 0%, var(--bg2) 58%, var(--bg3) 100%);
 }}
 .grain {{
   position: absolute; inset: 0;
-  background-image: {GRAIN};
-  background-size: 300px 300px;
-  opacity: 0.06; mix-blend-mode: overlay;
-  pointer-events: none;
+  background-image: {GRAIN}; background-size: 300px 300px;
+  opacity: 0.055; mix-blend-mode: overlay; pointer-events: none;
 }}
 .vignette {{
   position: absolute; inset: 0;
-  box-shadow: inset 0 0 220px rgba(0,0,0,0.55);
-  pointer-events: none;
+  box-shadow: inset 0 0 220px rgba(0,0,0,0.5); pointer-events: none;
 }}
 .edge {{
-  position: absolute; left: 0; top: 0;
-  width: 4px; height: 100%;
-  background: linear-gradient(to bottom, #C9A84C, #EBD07A 45%, #C9A84C);
+  position: absolute; left: 0; top: 0; width: 4px; height: 100%;
+  background: linear-gradient(to bottom, var(--accent), var(--accent-lt) 45%, var(--accent));
 }}
 .corner {{
   position: absolute; width: 54px; height: 54px;
-  border-color: rgba(201,168,76,0.55); pointer-events: none;
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent); pointer-events: none;
 }}
 .corner.tr {{ right: 40px; top: 40px; border-top: 2px solid; border-right: 2px solid; }}
 .corner.bl {{ left: 40px; bottom: 40px; border-bottom: 2px solid; border-left: 2px solid; }}
 .brand {{
   position: absolute; right: 44px; bottom: 40px;
-  font-family: 'Inter', sans-serif;
-  font-size: 17px; font-weight: 700;
-  letter-spacing: 3px;
-  color: rgba(201,168,76,0.60);
+  font-family: 'Inter', sans-serif; font-size: 17px; font-weight: 700;
+  letter-spacing: 3px; color: color-mix(in srgb, var(--accent) 65%, transparent);
 }}
 """
 
-def _html_page(body_html: str, extra_styles: str = "") -> str:
+def _html_page(body_html: str, theme: dict, extra_styles: str = "") -> str:
     return f"""<!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
 <style>
 {FONT_IMPORT}
+{_theme_css(theme)}
 {BASE_STYLES}
 {extra_styles}
 </style>
@@ -89,7 +123,8 @@ def _html_page(body_html: str, extra_styles: str = "") -> str:
 </html>"""
 
 
-def html_cover(title: str, topic: str) -> str:
+def html_cover(title: str, topic: str, theme: dict, kicker: str = "") -> str:
+    kicker_html = f'<div class="kicker">{kicker}</div>' if kicker else ""
     return _html_page(f"""
 <div class="slide">
   <div class="edge"></div>
@@ -100,64 +135,36 @@ def html_cover(title: str, topic: str) -> str:
       <span class="eyebrow-text">{topic.upper()}</span>
     </div>
     <h1 class="title">{title}</h1>
+    {kicker_html}
     <div class="rule"></div>
   </div>
-  <div class="read-hint">
-    <span class="rh-text">SCORRI</span>
-    <span class="rh-arrow">&rarr;</span>
-  </div>
+  <div class="read-hint"><span class="rh-text">SCORRI</span><span class="rh-arrow">&rarr;</span></div>
   <div class="brand">FB</div>
   <div class="grain"></div>
   <div class="vignette"></div>
 </div>
-""", """
-.content {
-  position: absolute;
-  left: 96px; right: 96px; top: 0; bottom: 0;
-  display: flex; flex-direction: column; justify-content: center;
-}
-.eyebrow { display: flex; align-items: center; gap: 18px; margin-bottom: 46px; }
-.eyebrow-line {
-  width: 46px; height: 2px;
-  background: linear-gradient(to right, #C9A84C, #EBD07A);
-}
-.eyebrow-text {
-  font-family: 'Inter', sans-serif;
-  font-size: 21px; font-weight: 600;
-  letter-spacing: 4px; color: #D9B85E;
-}
-.title {
-  font-family: 'Playfair Display', serif;
-  font-size: 88px; font-weight: 800;
-  line-height: 1.08; color: #FFFFFF;
-  letter-spacing: -1.5px;
-  text-shadow: 0 2px 30px rgba(0,0,0,0.4);
-}
-.rule {
-  margin-top: 46px;
-  width: 96px; height: 4px; border-radius: 2px;
-  background: linear-gradient(to right, #C9A84C, #EBD07A);
-  box-shadow: 0 0 24px rgba(201,168,76,0.4);
-}
-.read-hint {
-  position: absolute; left: 96px; bottom: 70px;
-  display: flex; align-items: center; gap: 12px;
-}
-.rh-text {
-  font-family: 'Inter', sans-serif;
-  font-size: 19px; font-weight: 600;
-  letter-spacing: 3px; color: #6F8AA6;
-}
-.rh-arrow { color: #C9A84C; font-size: 24px; }
+""", theme, """
+.content { position: absolute; left: 96px; right: 96px; top: 0; bottom: 0;
+  display: flex; flex-direction: column; justify-content: center; }
+.eyebrow { display: flex; align-items: center; gap: 18px; margin-bottom: 44px; }
+.eyebrow-line { width: 46px; height: 2px; background: linear-gradient(to right, var(--accent), var(--accent-lt)); }
+.eyebrow-text { font-size: 21px; font-weight: 600; letter-spacing: 4px; color: var(--accent-lt); }
+.title { font-family: 'Fraunces', serif; font-size: 90px; font-weight: 900; line-height: 1.05;
+  color: var(--ink); letter-spacing: -1.5px; text-shadow: 0 2px 30px rgba(0,0,0,0.4); }
+.kicker { margin-top: 30px; font-size: 30px; font-weight: 400; line-height: 1.4;
+  color: var(--body); max-width: 760px; }
+.rule { margin-top: 40px; width: 96px; height: 4px; border-radius: 2px;
+  background: linear-gradient(to right, var(--accent), var(--accent-lt));
+  box-shadow: 0 0 24px var(--glow); }
+.read-hint { position: absolute; left: 96px; bottom: 70px; display: flex; align-items: center; gap: 12px; }
+.rh-text { font-size: 19px; font-weight: 600; letter-spacing: 3px; color: var(--muted); }
+.rh-arrow { color: var(--accent); font-size: 24px; }
 """)
 
 
-def html_point(number: int, headline: str, body: str,
-               slide_idx: int, total: int) -> str:
+def html_point(number: int, headline: str, body: str, slide_idx: int, total: int, theme: dict) -> str:
     dots_html = "".join(
-        f'<div class="dot {"active" if i == slide_idx else ""}"></div>'
-        for i in range(total)
-    )
+        f'<div class="dot {"active" if i == slide_idx else ""}"></div>' for i in range(total))
     counter = f"{number:02d}<span class='c-sep'>/</span>{total:02d}"
     return _html_page(f"""
 <div class="slide">
@@ -177,75 +184,33 @@ def html_point(number: int, headline: str, body: str,
   <div class="grain"></div>
   <div class="vignette"></div>
 </div>
-""", """
-.num-bg {
-  position: absolute;
-  right: -40px; top: 50%; transform: translateY(-52%);
-  font-family: 'Playfair Display', serif;
-  font-size: 460px; font-weight: 900;
-  color: rgba(201,168,76,0.045);
-  line-height: 1; user-select: none; pointer-events: none;
-}
-.content {
-  position: absolute;
-  left: 100px; right: 100px; top: 0; bottom: 96px;
-  display: flex; flex-direction: column; justify-content: center;
-}
-.top-row {
-  display: flex; align-items: center; justify-content: space-between;
-  margin-bottom: 44px;
-}
-.badge {
-  width: 74px; height: 74px;
-  border: 2px solid #C9A84C; border-radius: 50%;
+""", theme, """
+.num-bg { position: absolute; right: -40px; top: 50%; transform: translateY(-52%);
+  font-family: 'Fraunces', serif; font-size: 470px; font-weight: 900;
+  color: color-mix(in srgb, var(--accent) 5%, transparent); line-height: 1; pointer-events: none; }
+.content { position: absolute; left: 100px; right: 100px; top: 0; bottom: 96px;
+  display: flex; flex-direction: column; justify-content: center; }
+.top-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 42px; }
+.badge { width: 74px; height: 74px; border: 2px solid var(--accent); border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
-  font-family: 'Playfair Display', serif;
-  font-size: 30px; font-weight: 700; color: #EBD07A;
-  box-shadow: 0 0 30px rgba(201,168,76,0.18);
-  flex-shrink: 0;
-}
-.counter {
-  font-family: 'Inter', sans-serif;
-  font-size: 22px; font-weight: 600;
-  letter-spacing: 2px; color: #6F8AA6;
-}
-.counter .c-sep { color: #C9A84C; margin: 0 4px; }
-.headline {
-  font-family: 'Playfair Display', serif;
-  font-size: 70px; font-weight: 700;
-  line-height: 1.13; color: #FFFFFF;
-  letter-spacing: -0.5px;
-}
-.sep { display: flex; align-items: center; gap: 10px; margin: 34px 0; }
-.sep-line {
-  display: block; width: 68px; height: 2px;
-  background: linear-gradient(to right, #C9A84C, #EBD07A);
-}
-.sep-dot { display: block; width: 8px; height: 8px; border-radius: 50%; background: #C9A84C; }
-.body-text {
-  font-family: 'Inter', sans-serif;
-  font-size: 35px; font-weight: 400;
-  line-height: 1.62; color: #CBD8E4;
-  letter-spacing: 0.2px;
-}
-.progress {
-  position: absolute; bottom: 44px; left: 50%;
-  transform: translateX(-50%);
-  display: flex; gap: 13px; align-items: center;
-}
-.dot {
-  width: 8px; height: 8px; border-radius: 50%;
-  border: 1.5px solid #3A5068; background: transparent;
-}
-.dot.active {
-  background: #C9A84C; border-color: #C9A84C;
-  width: 30px; border-radius: 4px;
-  box-shadow: 0 0 14px rgba(201,168,76,0.5);
-}
+  font-family: 'Fraunces', serif; font-size: 30px; font-weight: 700; color: var(--accent-lt);
+  box-shadow: 0 0 30px var(--glow); flex-shrink: 0; }
+.counter { font-size: 22px; font-weight: 600; letter-spacing: 2px; color: var(--muted); }
+.counter .c-sep { color: var(--accent); margin: 0 4px; }
+.headline { font-family: 'Fraunces', serif; font-size: 72px; font-weight: 700; line-height: 1.12;
+  color: var(--ink); letter-spacing: -0.5px; }
+.sep { display: flex; align-items: center; gap: 10px; margin: 32px 0; }
+.sep-line { display: block; width: 68px; height: 2px; background: linear-gradient(to right, var(--accent), var(--accent-lt)); }
+.sep-dot { display: block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+.body-text { font-size: 36px; font-weight: 400; line-height: 1.6; color: var(--body); letter-spacing: 0.2px; }
+.progress { position: absolute; bottom: 44px; left: 50%; transform: translateX(-50%);
+  display: flex; gap: 13px; align-items: center; }
+.dot { width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid color-mix(in srgb, var(--muted) 70%, transparent); background: transparent; }
+.dot.active { background: var(--accent); border-color: var(--accent); width: 30px; border-radius: 4px; box-shadow: 0 0 14px var(--glow); }
 """)
 
 
-def html_cta(author_name: str) -> str:
+def html_cta(author_name: str, theme: dict) -> str:
     initials = "".join(w[0] for w in author_name.split()[:2]).upper()
     return _html_page(f"""
 <div class="slide cta">
@@ -268,56 +233,24 @@ def html_cta(author_name: str) -> str:
   <div class="grain"></div>
   <div class="vignette"></div>
 </div>
-""", """
+""", theme, """
 .cta { display: flex; align-items: center; justify-content: center; }
-.content {
-  display: flex; flex-direction: column; align-items: center;
-  text-align: center; padding: 0 90px;
-}
-.avatar {
-  width: 138px; height: 138px; border-radius: 50%;
-  border: 2px solid #C9A84C;
-  display: flex; align-items: center; justify-content: center;
-  margin-bottom: 34px;
-  background: rgba(201,168,76,0.06);
-  box-shadow: 0 0 50px rgba(201,168,76,0.16);
-}
-.avatar-inner {
-  font-family: 'Playfair Display', serif;
-  font-size: 52px; font-weight: 700; color: #EBD07A;
-}
-.name {
-  font-family: 'Playfair Display', serif;
-  font-size: 50px; font-weight: 700; color: #FFFFFF;
-  margin-bottom: 12px;
-}
-.role {
-  font-family: 'Inter', sans-serif;
-  font-size: 21px; font-weight: 600;
-  letter-spacing: 4px; color: #D9B85E;
-  margin-bottom: 38px;
-}
-.divider {
-  width: 70px; height: 2px; margin-bottom: 38px;
-  background: linear-gradient(to right, transparent, #C9A84C, transparent);
-}
-.cta-title {
-  font-family: 'Playfair Display', serif;
-  font-size: 44px; font-weight: 700; color: #FFFFFF;
-  margin-bottom: 36px;
-}
+.content { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 0 90px; }
+.avatar { width: 138px; height: 138px; border-radius: 50%; border: 2px solid var(--accent);
+  display: flex; align-items: center; justify-content: center; margin-bottom: 34px;
+  background: color-mix(in srgb, var(--accent) 6%, transparent); box-shadow: 0 0 50px var(--glow); }
+.avatar-inner { font-family: 'Fraunces', serif; font-size: 52px; font-weight: 700; color: var(--accent-lt); }
+.name { font-family: 'Fraunces', serif; font-size: 52px; font-weight: 700; color: var(--ink); margin-bottom: 12px; }
+.role { font-size: 21px; font-weight: 600; letter-spacing: 4px; color: var(--accent-lt); margin-bottom: 38px; }
+.divider { width: 70px; height: 2px; margin-bottom: 38px; background: linear-gradient(to right, transparent, var(--accent), transparent); }
+.cta-title { font-family: 'Fraunces', serif; font-size: 46px; font-weight: 700; color: var(--ink); margin-bottom: 36px; }
 .actions { display: flex; flex-direction: column; gap: 22px; align-items: flex-start; }
-.action {
-  display: flex; align-items: center; gap: 18px;
-  font-family: 'Inter', sans-serif;
-  font-size: 29px; font-weight: 400; color: #B9C7D6;
-}
-.ic { color: #C9A84C; font-size: 16px; flex-shrink: 0; }
+.action { display: flex; align-items: center; gap: 18px; font-size: 29px; font-weight: 400; color: var(--body); }
+.ic { color: var(--accent); font-size: 16px; flex-shrink: 0; }
 """)
 
 
 def render_html_to_jpeg(html: str, output_path: str) -> None:
-    """Renderizza una stringa HTML in un JPEG 1080x1080 via Playwright."""
     with sync_playwright() as p:
         browser = p.chromium.launch()
         page = browser.new_page(viewport={"width": W, "height": H})
@@ -329,17 +262,17 @@ def render_html_to_jpeg(html: str, output_path: str) -> None:
 
 def build_slides_html(content: dict) -> list[str]:
     """Restituisce la lista di HTML per ogni slide."""
-    pages = [html_cover(content["title"], content["topic"])]
+    theme = pick_theme(content)
+    pages = [html_cover(content["title"], content["topic"], theme, content.get("kicker", ""))]
     points = content["points"]
     total = len(points)
     for i, point in enumerate(points):
-        pages.append(html_point(i + 1, point["headline"], point["body"], i, total))
-    pages.append(html_cta(content.get("author", "Federico Borrasso")))
+        pages.append(html_point(i + 1, point["headline"], point["body"], i, total, theme))
+    pages.append(html_cta(content.get("author", "Federico Borrasso"), theme))
     return pages
 
 
 def build_carousel(content: dict, output_path: str = "automation/carousel.pdf") -> str:
-    """Genera il PDF carosello (per compatibilità, usa le JPEG come prima)."""
     from fpdf import FPDF
     slide_paths = save_slide_jpegs(content, out_dir="automation/tmp_carousel", size=1080)
     pdf = FPDF(unit="pt", format=[W, H])
@@ -355,11 +288,9 @@ def build_carousel(content: dict, output_path: str = "automation/carousel.pdf") 
 
 def save_slide_jpegs(content: dict, out_dir: str = "automation/preview_slides",
                      size: int = 1080) -> list[str]:
-    """Renderizza ogni slide HTML in JPEG e restituisce i path."""
     pages = build_slides_html(content)
     out = Path(out_dir)
     out.mkdir(exist_ok=True)
-    paths = []
 
     with sync_playwright() as p:
         browser = p.chromium.launch()
@@ -370,28 +301,25 @@ def save_slide_jpegs(content: dict, out_dir: str = "automation/preview_slides",
             page.screenshot(path=path, type="jpeg", quality=95,
                             clip={"x": 0, "y": 0, "width": W, "height": H})
             page.close()
-
-            # Ridimensiona se richiesto (es. 800 per Telegram)
             if size != W:
                 from PIL import Image
                 img = Image.open(path)
                 img = img.resize((size, size), Image.LANCZOS)
                 img.save(path, "JPEG", quality=90)
-
         browser.close()
     return sorted(str(p) for p in out.glob("slide_*.jpg"))
 
 
 if __name__ == "__main__":
     test_content = {
-        "title": "PAC: investi ogni mese senza stress",
-        "topic": "Piani di Accumulo del Capitale",
+        "title": "Il TFR in azienda ti costa 30.000€",
+        "topic": "TFR e fondo pensione",
+        "kicker": "Lasciarlo fermo è una scelta. Quasi sempre, quella sbagliata.",
         "author": "Federico Borrasso",
         "points": [
-            {"headline": "Cos'è un PAC", "body": "Investi una cifra fissa ogni mese, indipendentemente da cosa fa il mercato. Semplice, automatico, efficace."},
-            {"headline": "Dollar Cost Averaging", "body": "Compri più quote quando i prezzi scendono e meno quando salgono. Il tempo abbassa il costo medio."},
-            {"headline": "Quanto serve per iniziare", "body": "Anche 50€ al mese sono sufficienti. L'abitudine conta più dell'importo iniziale."},
-            {"headline": "L'errore da non fare", "body": "Interrompere nei momenti di crisi è il più costoso. Il PAC funziona proprio nelle fasi difficili."},
+            {"headline": "Il TFR perde valore", "body": "In azienda rende l'1,5% + 75% dell'inflazione. Spesso non basta nemmeno a coprire il carovita."},
+            {"headline": "Il fondo lavora per te", "body": "Investito sui mercati, nel lungo periodo il rendimento medio supera nettamente la rivalutazione di legge."},
+            {"headline": "Tassazione dimezzata", "body": "Alla liquidazione il fondo tassa dal 15% al 9%. Il TFR in azienda parte dal 23%."},
         ]
     }
     paths = save_slide_jpegs(test_content, out_dir="/tmp/test_slides")
